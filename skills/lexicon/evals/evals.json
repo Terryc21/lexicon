@@ -38,7 +38,7 @@
       "name": "tc-roundtrip-regen-undo",
       "prompt": "Send my Swift vocab terms to tutorial-creator and refresh its VOCABULARY.md so they show up. My tutorial project is fixtures/tcproj.",
       "user_answers": "Yes, go ahead after showing me what will change. If regen-md asks about terms that exist only in VOCABULARY.md, keep them. Follow-up after the refresh: 'Actually, undo that export. I want to redo it later.'",
-      "expected_output": "The refresh adds the three exported terms to VOCABULARY.md under an External source section (plus rows for the fixture's other yaml-only terms) and leaves every prior row, heading and Source line in place; regen-md asks about the terms that exist only in the view instead of erasing them, and they are kept. tutorial-creator's vocab undo then restores the exact original term set, consumes the marker, and removes the three rows; a second refresh adds and removes nothing.",
+      "expected_output": "The refresh adds the three exported terms to VOCABULARY.md under an External source section (plus rows for the fixture's other yaml-only terms) and leaves every prior row, heading and Source line in place; regen-md asks about the terms that exist only in the view instead of erasing them, and they are kept. tutorial-creator's vocab undo then restores the exact original term set, consumes the marker, and removes the three rows and the External source section they created.",
       "files": [
         "fixtures/e3-home",
         "fixtures/tcproj"
