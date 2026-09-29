@@ -16,7 +16,7 @@
       "name": "session-scan-two-lists",
       "prompt": "Go through my session from last week (the transcript is at fixtures/past-session-v2.jsonl) and add anything worth learning to my vocab lists.",
       "user_answers": "Add every new term you recommend. For any possible duplicate of an existing entry, keep the existing entry and fold the new form in as an alias rather than adding a second entry. Accept drafts as written.",
-      "expected_output": "AI terms routed to the AI list, no second MainActor entry, RAG folded into retrieval-augmented generation as an alias, new entries complete with provenance. Also: 'token' is a known term in the AI list's scope and must not be added; 'reference cycle' from the session is folded into the existing 'retain cycle' as an alias.",
+      "expected_output": "AI terms routed to the AI list, no second MainActor entry, RAG folded into retrieval-augmented generation as an alias, new entries complete with provenance and dated 2026-09-20, the session's own date, not today's. Also: 'token' is a known term in the AI list's scope and must not be added; 'reference cycle' from the session is folded into the existing 'retain cycle' as an alias.",
       "files": [
         "fixtures/e2v2-home",
         "fixtures/past-session-v2.jsonl"

@@ -201,7 +201,8 @@ session it came from. Often that stranger is the user. So:
 - **`use_case`** says when or why someone reaches for this, starting with the general situation
   ("Use it whenever..."). Expand any jargon on first use.
 - **`first_encountered`** is the only place for specifics: `source` (file path, URL, or
-  "session transcript"), `context` (project, what was happening), `date`.
+  "session transcript"), `context` (project, what was happening), `date` (the day the term was
+  met: for a past session, that session's own date from `session-text`, not today's).
 
 The check: hide `first_encountered` and reread the entry. If it stops making sense, or names
 something a stranger could not know, rewrite it.

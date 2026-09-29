@@ -805,17 +805,25 @@ def from_tc(t: dict) -> dict:
     }
 
 
+def _view_key(s: str) -> str:
+    """How tutorial-creator's regen-md matches a view row to a yaml term: ignoring case, backticks
+    and ** bold. Deliberately not norm(), which also folds camelCase, sigils and plurals and would
+    call `ViewModifier` and "View modifier" the same term."""
+    return re.sub(r"\s+", " ", s.replace("`", "").replace("**", "")).strip().lower()
+
+
 def view_drift(vocab: str, entries: list[dict]) -> dict:
     """Terms tutorial-creator's VOCABULARY.md shows that its vocabulary.yaml lacks.
 
     Such terms are invisible to vocab review and flashcards. tutorial-creator's regen-md asks
     about each one instead of erasing it (since its 09/28/2026 in-place update; earlier releases
-    rebuilt the view from the yaml and erased them).
+    rebuilt the view from the yaml and erased them). Rows are matched to terms the way regen-md
+    matches them, so this count agrees with the number it will ask about.
     """
     md = os.path.join(os.path.dirname(vocab), "VOCABULARY.md")
     if not os.path.exists(md):
         return {"view": None, "md_only_terms": 0, "examples": []}
-    keys = {norm(e.get("term", "")) for e in entries if isinstance(e, dict)}
+    keys = {_view_key(e.get("term", "")) for e in entries if isinstance(e, dict)}
     section, only = "", []
     for line in open(md, encoding="utf-8", errors="replace"):
         if line.startswith("## "):
@@ -827,7 +835,7 @@ def view_drift(vocab: str, entries: list[dict]) -> dict:
         cell = m.group(1).strip()
         if re.match(r"^[-: ]+$", cell) or cell.lower() in ("term", "day", "#") or cell.isdigit():
             continue
-        if norm(cell) and norm(cell) not in keys:
+        if _view_key(cell) and _view_key(cell) not in keys:
             only.append(cell)
     return {"view": md, "md_only_terms": len(only), "examples": only[:8]}
 
@@ -889,7 +897,7 @@ def cmd_export_tc(args):
                "terms get rows; if the view has drifted from the yaml, it also fixes other rows and rebuilds "
                "the Cumulative Count. ")
     if drift["md_only_terms"]:
-        nxt += (f"It will also ask about roughly {drift['md_only_terms']} terms the view shows that "
+        nxt += (f"It will also ask about {drift['md_only_terms']} terms the view shows that "
                 "vocabulary.yaml lacks: keep them or add them to the yaml, since removing one loses it. "
                 "(A tutorial-creator older than 09/28/2026 erases those terms on a regen instead; "
                 "update it first.) ")
@@ -935,11 +943,19 @@ def _blocks_text(content) -> str:
     return "\n".join(parts)
 
 
+def _local_date(ts) -> str | None:
+    """Local calendar date of an ISO-8601 timestamp (transcripts write UTC, e.g. 2026-09-20T10:00:00Z)."""
+    try:
+        return dt.datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone().date().isoformat()
+    except (AttributeError, ValueError):
+        return None
+
+
 def cmd_session_text(args):
     path = os.path.expanduser(args.path)
     if not os.path.exists(path):
         fail(f"No transcript at {path}")
-    chunks = []
+    chunks, stamps = [], []
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
             try:
@@ -954,6 +970,8 @@ def cmd_session_text(args):
             if not text or text.startswith("<command-") or text.startswith("<local-command"):
                 continue
             chunks.append(f"{role.upper()}: {text}")
+            if rec.get("timestamp"):
+                stamps.append(rec["timestamp"])
     text = "\n\n".join(chunks)
     truncated = len(text) > args.max_chars
     if truncated:
@@ -961,7 +979,9 @@ def cmd_session_text(args):
     if args.raw:
         sys.stdout.write(text)
         return
-    out({"ok": True, "path": path, "chars": len(text), "truncated": truncated, "turns": len(chunks), "text": text})
+    first, last = (stamps[0], stamps[-1]) if stamps else (None, None)
+    out({"ok": True, "path": path, "chars": len(text), "truncated": truncated, "turns": len(chunks),
+         "date": _local_date(first), "first_timestamp": first, "last_timestamp": last, "text": text})
 
 
 def cmd_sessions(args):

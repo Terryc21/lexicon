@@ -19,6 +19,12 @@ python3 "$S" sessions --limit 15          # recent transcripts: path, project, t
 python3 "$S" session-text <path.jsonl>    # user + assistant text only; tool calls and reminders dropped
 ```
 
+`session-text` also returns `date` (the local calendar date of the session's first turn),
+`first_timestamp` and `last_timestamp`. Use `date` as `first_encountered.date` for every term taken
+from that session. `add` stamps today's date when none is given, which is wrong for last week's
+session. (`date` is null when the transcript has no timestamps; then ask the user.) For the session
+you are in now, today is right.
+
 Let the user pick from `sessions` when they say "my last session" or "the session where I...".
 `session-text` truncates at 400k characters by default (`--max-chars`). If it reports
 `truncated: true`, say so and offer to scan the rest.

@@ -63,9 +63,10 @@ rows are kept, and nothing is removed without asking. If the view has drifted fr
 can be many more rows than the exported ones, so say so before the user runs it. If there is no
 VOCABULARY.md yet, regen-md builds one.
 
-`export-tc` also reports `view_drift` (on `--dry-run` too): a rough count of the terms the view
-shows that the yaml lacks, which tutorial-creator's `vocab review` and flashcards never see.
-regen-md matches rows more strictly, so its own count can come out a little higher.
+`export-tc` also reports `view_drift` (on `--dry-run` too): the number of terms the view shows that
+the yaml lacks, which tutorial-creator's `vocab review` and flashcards never see. It matches rows to
+terms the way regen-md does (ignoring case, backticks and bold), so it is the number regen-md will
+ask about.
 
 - `md_only_terms: 0`: tell the user to run `/tutorial-creator vocab regen-md`.
 - Above zero: tell them the same, and that regen-md will ask about those terms (show a few from
