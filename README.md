@@ -53,6 +53,9 @@ pip3 install pyyaml   # the helper script's only dependency
 Then ask Claude something like "start a Swift vocab list from this article" or "what terms from
 this session should I learn?"
 
+For a walkthrough of scans, lists, duplicates and the tutorial-creator link, see the
+[user guide](LEXICON-USER-GUIDE.md).
+
 ## Where things are stored
 
 Lists live in `~/.claude/lexicon/lists/`, one YAML file per list, with a generated Markdown file
