@@ -690,7 +690,8 @@ def looks_like_code(ex: str) -> bool:
     if "\n" in ex:
         return True
     # A capitalized sentence of several words ending in . ! or ? is prose even if it quotes code.
-    prose = bool(re.match(r"^[A-Z][a-z]+\b", ex)) and ex.rstrip().endswith((".", "!", "?")) and len(ex.split()) >= 5
+    # [a-z]* rather than [a-z]+, so a sentence opening with "A" or "I" counts too.
+    prose = bool(re.match(r"^[A-Z][a-z]*\b", ex)) and ex.rstrip().endswith((".", "!", "?")) and len(ex.split()) >= 5
     return bool(_CODE.search(ex)) and not prose
 
 
