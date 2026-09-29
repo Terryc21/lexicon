@@ -26,7 +26,7 @@ where their tutorial project is. Don't search the disk for it.
 | `use_case` + `example` | `use_case` | tutorial-creator has no example field. On export, the example is appended to `use_case` as `Example: ...`, the shape its writing-style guide already uses. On import, a trailing `Example: ...` is split back out. |
 | `related_terms` | `related_terms` | |
 | `first_encountered.source` | `first_encountered.source_file` | only when it is a file path; URLs and "session transcript" go into `notes` |
-| `first_encountered.context` | `first_encountered.context` = `external source` | Fixed value. tutorial-creator's `regen-md` groups VOCABULARY.md by this field and only recognizes a set list of values; `external source` is its batch-import group. The original context goes into `notes`. |
+| `first_encountered.context` | `first_encountered.context` = `external source` | Fixed value. tutorial-creator's `regen-md` files each new term under the view section whose heading matches this field, creating it if needed, so exports land under `## External source`. The original context goes into `notes`. |
 | `aliases`, `distinct_from`, `seen_in` | (none) | not carried; tutorial-creator has no such fields |
 | (none) | `status: new`, `test_history: []`, `applied_test_history: []` | exported terms start fresh in the review cycle |
 | (none) | `notes` | `Exported from lexicon list "<name>" on <date>. First seen: <context>. Source: <url or label>.` |
@@ -51,18 +51,19 @@ What the script guarantees, so you can tell the user plainly:
   reverses the whole export as one batch.
 - The lexicon entries get `exported_to_tc: <date>`.
 
-### Before recommending `regen-md`
+### After an export: `regen-md`
 
-`regen-md` rebuilds VOCABULARY.md entirely from vocabulary.yaml. If the view has drifted, so that
-it shows terms the yaml doesn't have (tutorials can write to the view without adding yaml
-entries), a regen silently erases those terms. `export-tc` measures this and reports
-`view_drift` (on `--dry-run` too):
+`regen-md` updates VOCABULARY.md in place: it adds rows for the exported terms and leaves the rest
+of the view alone. `export-tc` also reports `view_drift` (on `--dry-run` too): the terms the view
+shows that the yaml lacks, which tutorial-creator's `vocab review` and flashcards never see.
 
-- `md_only_terms: 0`: say the view is stale until they run `/tutorial-creator vocab regen-md`.
-- Above zero: do not recommend the regen. Tell the user how many terms exist only in the view
-  (show a few from `examples`), and that a regen would erase them. Offer two paths: get those
-  terms into the yaml first, or add the exported terms to VOCABULARY.md by hand without a full
-  rebuild.
+- `md_only_terms: 0`: tell the user to run `/tutorial-creator vocab regen-md`.
+- Above zero: tell them the same, and that regen-md will ask about those terms (show a few from
+  `examples`). Recommend keeping them or adding them to the yaml; removing one loses it.
+
+This relies on tutorial-creator's in-place `regen-md` (09/28/2026 on). An older one rebuilds the
+view from the yaml and erases view-only terms, so with an older tutorial-creator, don't recommend
+the regen while `md_only_terms` is above zero.
 
 lexicon never regenerates or edits another tool's files other than the append described above.
 

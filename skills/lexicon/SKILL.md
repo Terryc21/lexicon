@@ -240,11 +240,11 @@ user-confirmed. Read `references/tutorial-creator.md` before either direction.
   show what would be added and what would be skipped as already there. Then run it without
   `--dry-run`. The script appends to the end of their file without rewriting anything already in
   it. It writes tutorial-creator's own undo marker and rolls back if the result does not parse.
-  Afterwards, relay the script's `next` message. Normally that says to run
-  `/tutorial-creator vocab regen-md`. But when `view_drift.md_only_terms` is above zero, their
-  VOCABULARY.md shows terms their yaml lacks, and a regen would erase those. In that case, say so
-  and do not recommend the regen. Also mention that `/tutorial-creator vocab undo` reverses the
-  export within 24 hours.
+  Afterwards, relay the script's `next` message: it says to run `/tutorial-creator vocab regen-md`,
+  which adds the exported terms to their VOCABULARY.md in place. When `view_drift.md_only_terms` is
+  above zero, their view also shows terms their yaml lacks, and regen-md will ask about each one;
+  tell the user to keep those terms or add them to the yaml, not remove them. Also mention that
+  `/tutorial-creator vocab undo` reverses the export within 24 hours.
 - **Import** (tutorial-creator to lexicon): `import-tc [--match REGEX] [--type T...] [--since DATE]`
   returns mapped entries without writing anything. Route them to lists by scope, fill any field
   listed in `needs` (usually `example`), run the duplicate steps, confirm, then `add`. Learning

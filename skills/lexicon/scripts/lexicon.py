@@ -756,9 +756,9 @@ def to_tc(e: dict, list_name: str) -> dict:
     fe = e.get("first_encountered") or {}
     src = fe.get("source", "") or ""
     is_file = bool(src) and "://" not in src and not src.lower().startswith("session")
-    # tutorial-creator's regen-md groups VOCABULARY.md by first_encountered.context and only
-    # knows a fixed set of values; "external source" is its batch-import group. The lexicon
-    # provenance goes in notes, which is where its spec keeps that distinction.
+    # tutorial-creator's regen-md files a new term under the VOCABULARY.md section whose heading
+    # matches its first_encountered.context, creating one if needed, so every export lands under
+    # "## External source". The lexicon provenance goes in notes.
     note = f"Exported from lexicon list \"{list_name}\" on {today()}."
     if fe.get("context"):
         note += f" First seen: {fe['context']}."
@@ -808,7 +808,9 @@ def from_tc(t: dict) -> dict:
 def view_drift(vocab: str, entries: list[dict]) -> dict:
     """Terms tutorial-creator's VOCABULARY.md shows that its vocabulary.yaml lacks.
 
-    regen-md rebuilds the view from the yaml, so any such term would be erased by it.
+    Such terms are invisible to vocab review and flashcards. tutorial-creator's regen-md asks
+    about each one instead of erasing it (since its 09/28/2026 in-place update; earlier releases
+    rebuilt the view from the yaml and erased them).
     """
     md = os.path.join(os.path.dirname(vocab), "VOCABULARY.md")
     if not os.path.exists(md):
@@ -879,13 +881,11 @@ def cmd_export_tc(args):
             e["exported_to_tc"] = today()
     save_list(h, data)
     drift = view_drift(vocab, after)
+    nxt = "Run `/tutorial-creator vocab regen-md` to add the exported terms to VOCABULARY.md. "
     if drift["md_only_terms"]:
-        nxt = (f"Do NOT run `/tutorial-creator vocab regen-md` yet: VOCABULARY.md shows {drift['md_only_terms']} "
-               "terms that vocabulary.yaml does not have, and a regen rebuilds the view from the yaml, so it "
-               "would erase them. Either get those terms into vocabulary.yaml first, or add the exported terms "
-               "to VOCABULARY.md without a full rebuild. ")
-    else:
-        nxt = "tutorial-creator's VOCABULARY.md view is now stale: run `/tutorial-creator vocab regen-md`. "
+        nxt += (f"It will also ask about {drift['md_only_terms']} terms the view shows that vocabulary.yaml "
+                "lacks: keep them or add them to the yaml, since removing one loses it. (A tutorial-creator "
+                "older than 09/28/2026 erases those terms on a regen instead; update it first.) ")
     nxt += "To reverse this export within 24h: `/tutorial-creator vocab undo`."
     out({"ok": True, "vocab": vocab, "added": [r["term"] for r in to_write], "skipped_existing": skipped,
          "undo_marker": marker, "view_drift": drift, "next": nxt})
