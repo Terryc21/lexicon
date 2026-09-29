@@ -27,7 +27,7 @@
       "name": "export-to-tutorial-creator",
       "prompt": "Send my Swift vocab terms over to tutorial-creator so I can review them with flashcards. My tutorial vocabulary file is fixtures/tc/vocabulary.yaml.",
       "user_answers": "Yes, go ahead after showing me what will change.",
-      "expected_output": "Three new terms appended to the tutorial-creator file without altering existing bytes; @MainActor skipped as already present; appended entries start at status new; undo marker written; user told to run regen-md, which adds the exported terms to VOCABULARY.md in place. Exported entries use first_encountered.context 'external source', which regen-md files under an 'External source' section.",
+      "expected_output": "Three new terms appended to the tutorial-creator file without altering existing bytes; @MainActor skipped as already present; appended entries start at status new; undo marker written; user told to run regen-md, which brings VOCABULARY.md in step with the yaml in place. Exported entries use first_encountered.context 'external source', which regen-md files under an 'External source' section.",
       "files": [
         "fixtures/e3-home",
         "fixtures/tc/vocabulary.yaml"

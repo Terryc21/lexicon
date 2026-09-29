@@ -13,8 +13,11 @@ reference. The interop moves terms between them without either tool taking over 
 2. `~/.claude/tutorial-creator/registry.yaml` → the `default` project (or the first one), then
    that project's `.claude/tutorial-config.yaml` → `tutorials_dir` → `vocabulary.yaml`
 
-Any interop command also accepts `--vocab PATH` for one-off use. If nothing resolves, ask the user
-where their tutorial project is. Don't search the disk for it.
+Any interop command (`export-tc`, `import-tc`, `dupes`) also accepts `--vocab PATH` for one-off use.
+**If the user names a tutorial vocabulary file or project, pass it with `--vocab` on every call, or
+set it once with `config --tc-vocab`.** Otherwise `status`, and any call that omits the flag,
+resolves the registry's default project, which may not be the one they meant. If nothing resolves,
+ask the user where their tutorial project is. Don't search the disk for it.
 
 ## Field mapping
 
@@ -53,9 +56,16 @@ What the script guarantees, so you can tell the user plainly:
 
 ### After an export: `regen-md`
 
-`regen-md` updates VOCABULARY.md in place: it adds rows for the exported terms and leaves the rest
-of the view alone. `export-tc` also reports `view_drift` (on `--dry-run` too): the terms the view
+`regen-md` brings VOCABULARY.md in step with vocabulary.yaml, in place. The exported terms get rows,
+and so does any other yaml term whose row is missing; each term's row takes the yaml's current
+definition, and the Cumulative Count is recomputed. Headings, Source lines, row order and repeat
+rows are kept, and nothing is removed without asking. If the view has drifted from the yaml, that
+can be many more rows than the exported ones, so say so before the user runs it. If there is no
+VOCABULARY.md yet, regen-md builds one.
+
+`export-tc` also reports `view_drift` (on `--dry-run` too): a rough count of the terms the view
 shows that the yaml lacks, which tutorial-creator's `vocab review` and flashcards never see.
+regen-md matches rows more strictly, so its own count can come out a little higher.
 
 - `md_only_terms: 0`: tell the user to run `/tutorial-creator vocab regen-md`.
 - Above zero: tell them the same, and that regen-md will ask about those terms (show a few from
@@ -92,10 +102,15 @@ empty required fields (often `example`, since older tutorial-creator entries hav
 1. Route each entry to a list by scope. Leave out ones no list's scope covers, and say so.
 2. Fill the `needs` fields following the writing rules in SKILL.md. Tell the user which examples
    you wrote, since they did not come from the source.
-3. Run `dupes` and the semantic pass, as in a normal scan.
-4. Confirm, then `add`. It strips the working `needs` key, so there is no need to remove it first.
+3. Reread every entry's `definition`, `use_case` and `notes` against the same writing rules. The
+   `needs` list only flags empty fields, and tutorial-creator entries can carry the user's app or
+   file names or a person's name. Reword those before storing, and tell the user which entries you
+   changed.
+4. Run `dupes` and the semantic pass, as in a normal scan. On an import every candidate matches its
+   own tutorial-creator entry, so ignore those self-matches and look for other hits.
+5. Confirm, then `add`. It strips the working `needs` key, so there is no need to remove it first.
 
 Mastery status stays in tutorial-creator. lexicon does not track learning state.
 
-For a large import (the user's vocabulary may hold hundreds of terms), work in batches of about
-20 to 40. Show progress, and let the user stop between batches.
+For a large import (the user's vocabulary may hold hundreds of terms), work in batches of at most
+20, the same limit as a scan screen. Show progress, and let the user stop between batches.

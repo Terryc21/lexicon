@@ -881,11 +881,18 @@ def cmd_export_tc(args):
             e["exported_to_tc"] = today()
     save_list(h, data)
     drift = view_drift(vocab, after)
-    nxt = "Run `/tutorial-creator vocab regen-md` to add the exported terms to VOCABULARY.md. "
+    if drift["view"] is None:
+        nxt = ("There is no VOCABULARY.md beside that yaml yet: run `/tutorial-creator vocab regen-md` to "
+               "build one from it, exported terms included. ")
+    else:
+        nxt = ("Run `/tutorial-creator vocab regen-md` to bring VOCABULARY.md in step with the yaml. The exported "
+               "terms get rows; if the view has drifted from the yaml, it also fixes other rows and rebuilds "
+               "the Cumulative Count. ")
     if drift["md_only_terms"]:
-        nxt += (f"It will also ask about {drift['md_only_terms']} terms the view shows that vocabulary.yaml "
-                "lacks: keep them or add them to the yaml, since removing one loses it. (A tutorial-creator "
-                "older than 09/28/2026 erases those terms on a regen instead; update it first.) ")
+        nxt += (f"It will also ask about roughly {drift['md_only_terms']} terms the view shows that "
+                "vocabulary.yaml lacks: keep them or add them to the yaml, since removing one loses it. "
+                "(A tutorial-creator older than 09/28/2026 erases those terms on a regen instead; "
+                "update it first.) ")
     nxt += "To reverse this export within 24h: `/tutorial-creator vocab undo`."
     out({"ok": True, "vocab": vocab, "added": [r["term"] for r in to_write], "skipped_existing": skipped,
          "undo_marker": marker, "view_drift": drift, "next": nxt})
@@ -1060,7 +1067,7 @@ def main():
     sp.add_parser("lists").set_defaults(fn=cmd_lists)
     c = sp.add_parser("show"); c.add_argument("slug"); c.add_argument("term", nargs="?"); c.set_defaults(fn=cmd_show)
     c = sp.add_parser("dupes"); c.add_argument("--candidates", required=True, help='JSON file or -: [{"term":..,"aliases":[..]}]')
-    c.add_argument("--list"); c.add_argument("--all", action="store_true"); c.add_argument("--tc"); c.add_argument("--with-tc", action="store_true"); c.set_defaults(fn=cmd_dupes)
+    c.add_argument("--list"); c.add_argument("--all", action="store_true"); c.add_argument("--tc", "--vocab", dest="tc"); c.add_argument("--with-tc", action="store_true"); c.set_defaults(fn=cmd_dupes)
     c = sp.add_parser("audit"); c.add_argument("slug", nargs="?"); c.add_argument("--all", action="store_true"); c.set_defaults(fn=cmd_audit)
     c = sp.add_parser("add"); c.add_argument("slug"); c.add_argument("--entries", required=True); c.add_argument("--partial", action="store_true"); c.set_defaults(fn=cmd_add)
     c = sp.add_parser("update"); c.add_argument("slug"); c.add_argument("--entries", required=True); c.add_argument("--append-seen", action="store_true"); c.set_defaults(fn=cmd_update)

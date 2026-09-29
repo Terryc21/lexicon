@@ -53,7 +53,7 @@ Possible duplicate in swift:
 | Choice | Action |
 |---|---|
 | **merge** (both already stored) | `merge SLUG KEEP DROP [--override '{"definition": ...}']` |
-| **merge** (new candidate into an existing entry) | don't add; `update` the existing entry: append the candidate to `aliases`, and append a `seen_in` sighting with `--append-seen` |
+| **merge** (new candidate into an existing entry) | don't add; `update` the existing entry with its full `aliases` list, the old aliases plus the candidate (`update` replaces a list you send, so leaving the old ones out deletes them), and append a `seen_in` sighting with `--append-seen` |
 | **keep both** | add or update with `distinct_from: [<other term>]` on the new entry, and `update` the other entry's `distinct_from` too, so neither is flagged again |
 | **skip new** | drop the candidate; optionally record a sighting on the existing entry |
 | **replace** | `update` the existing entry's fields with the better text |
@@ -72,6 +72,7 @@ different words. For each cross-list hit, say which list already has it and offe
 
 ## Against tutorial-creator
 
-`dupes --with-tc` also checks tutorial-creator's vocabulary. A hit there does not block adding the
+`dupes --with-tc` also checks tutorial-creator's vocabulary (`--vocab PATH` checks a file the user
+named). A hit there does not block adding the
 term to a lexicon list, because the two stores serve different purposes. It does mean the term
 should not be exported again, and `export-tc` skips it automatically.

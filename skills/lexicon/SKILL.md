@@ -134,6 +134,9 @@ echo '[{"term":"actor reentrancy","aliases":[]},{"term":"MAD","aliases":["median
   | python3 "$S" dupes --candidates - --all --with-tc
 ```
 
+`--with-tc` checks the auto-detected tutorial-creator file; `--vocab PATH` in its place checks the
+file the user named.
+
 That catches case, sigils, camelCase vs spaced, separators, plurals, parentheticals, and aliases.
 It cannot catch synonyms or an acronym against its expansion when no alias links them, so also do
 a **semantic pass**: compare each candidate against the existing terms in its target list (use
@@ -149,6 +152,8 @@ Already in your lists (won't re-add):
   - reentrancy          matches "Actor reentrancy" in swift (normalized)
 Possible duplicates (need your call):
   - isolation domain    may be the same concept as "actor isolation" in swift
+Also in tutorial-creator (fine to add; it just won't be exported again):
+  - @MainActor          matches an entry in your tutorial vocabulary
 New:
   1. actor reentrancy     explained in the session, when two calls interleaved
   2. nonisolated(unsafe)  used in a fix; not explained
@@ -176,6 +181,8 @@ that list. Fix the entry, or, if the user confirmed the two terms are distinct, 
 to `distinct_from` and retry. Use `--partial` only when the user wants the valid ones saved anyway.
 When a term the user kept was "already in your lists," record the new sighting on the existing
 entry instead: `update <slug> --append-seen` with `{"term": ..., "seen_in": [{source, context, date}]}`.
+`update` replaces any other list field you send, such as `aliases`, so to add an alias send the full
+list, old aliases included.
 
 **8. Report.** Say what was added to which list, the new count, and where the Markdown view is
 (`~/.claude/lexicon/lists/<slug>.md`). Mention `undo` in one line.
@@ -241,14 +248,17 @@ user-confirmed. Read `references/tutorial-creator.md` before either direction.
   `--dry-run`. The script appends to the end of their file without rewriting anything already in
   it. It writes tutorial-creator's own undo marker and rolls back if the result does not parse.
   Afterwards, relay the script's `next` message: it says to run `/tutorial-creator vocab regen-md`,
-  which adds the exported terms to their VOCABULARY.md in place. When `view_drift.md_only_terms` is
-  above zero, their view also shows terms their yaml lacks, and regen-md will ask about each one;
-  tell the user to keep those terms or add them to the yaml, not remove them. Also mention that
-  `/tutorial-creator vocab undo` reverses the export within 24 hours.
+  which brings their VOCABULARY.md in step with the yaml in place. The exported terms get rows, and
+  if the view had drifted from the yaml it fixes other rows too, so say so. When
+  `view_drift.md_only_terms` is above zero, their view also shows terms their yaml lacks, and
+  regen-md will ask about each one; tell the user to keep those terms or add them to the yaml, not
+  remove them. Also mention that `/tutorial-creator vocab undo` reverses the export within 24 hours.
 - **Import** (tutorial-creator to lexicon): `import-tc [--match REGEX] [--type T...] [--since DATE]`
   returns mapped entries without writing anything. Route them to lists by scope, fill any field
-  listed in `needs` (usually `example`), run the duplicate steps, confirm, then `add`. Learning
-  state (status, test history) stays in tutorial-creator.
+  listed in `needs` (usually `example`), and reword any `definition`, `use_case` or `notes` that
+  names the user's app, files or people (`needs` does not flag those). Then run the duplicate steps
+  (each imported term matches its own tutorial-creator entry; ignore that), confirm, then `add`.
+  Learning state (status, test history) stays in tutorial-creator.
 
 ## Things to avoid
 
