@@ -1,0 +1,100 @@
+# Working with tutorial-creator's vocabulary
+
+tutorial-creator keeps a single `vocabulary.yaml` per tutorial project (its "Schema 2"): terms with
+a learning state (`status`: new, reviewing, mastered, or confused, plus `test_history`) that its
+`vocab review` and `vocab flashcards` commands use. lexicon keeps subject lists for capture and
+reference. The interop moves terms between them without either tool taking over the other's job.
+
+## Finding the file
+
+`lexicon.py status` reports `tutorial_creator_vocab`. It resolves in this order:
+
+1. `config.yaml` → `tutorial_creator_vocab` (set with `lexicon.py config --tc-vocab PATH`)
+2. `~/.claude/tutorial-creator/registry.yaml` → the `default` project (or the first one), then
+   that project's `.claude/tutorial-config.yaml` → `tutorials_dir` → `vocabulary.yaml`
+
+Any interop command also accepts `--vocab PATH` for one-off use. If nothing resolves, ask the user
+where their tutorial project is. Don't search the disk for it.
+
+## Field mapping
+
+| lexicon | tutorial-creator | Notes |
+|---|---|---|
+| `term` | `term` | |
+| `type` | `type` | free label in both |
+| `definition` | `definition` | |
+| `use_case` + `example` | `use_case` | tutorial-creator has no example field. On export, the example is appended to `use_case` as `Example: ...`, the shape its writing-style guide already uses. On import, a trailing `Example: ...` is split back out. |
+| `related_terms` | `related_terms` | |
+| `first_encountered.source` | `first_encountered.source_file` | only when it is a file path; URLs and "session transcript" go into `notes` |
+| `first_encountered.context` | `first_encountered.context` = `external source` | Fixed value. tutorial-creator's `regen-md` groups VOCABULARY.md by this field and only recognizes a set list of values; `external source` is its batch-import group. The original context goes into `notes`. |
+| `aliases`, `distinct_from`, `seen_in` | (none) | not carried; tutorial-creator has no such fields |
+| (none) | `status: new`, `test_history: []`, `applied_test_history: []` | exported terms start fresh in the review cycle |
+| (none) | `notes` | `Exported from lexicon list "<name>" on <date>. First seen: <context>. Source: <url or label>.` |
+
+## Export: lexicon → tutorial-creator
+
+```bash
+python3 "$S" export-tc <slug> "<term>" "<term>" --dry-run     # or --all
+python3 "$S" export-tc <slug> "<term>" "<term>"
+```
+
+What the script guarantees, so you can tell the user plainly:
+
+- **Existing entries are untouched.** New entries are appended to the end of the file. The file is
+  never re-serialized, because re-dumping would reformat hundreds of hand-curated entries.
+- **No duplicates.** Terms that already exist there (same surface-form matching as `dupes`) are
+  skipped and listed.
+- **Safe failure.** After appending, it re-parses the file and checks the entry count. If anything
+  is off, it restores the exact original bytes and reports an error.
+- **Undoable.** It writes tutorial-creator's own 24-hour undo marker
+  (`vocabulary.yaml.add-<timestamp>`, one term per line), so `/tutorial-creator vocab undo`
+  reverses the whole export as one batch.
+- The lexicon entries get `exported_to_tc: <date>`.
+
+### Before recommending `regen-md`
+
+`regen-md` rebuilds VOCABULARY.md entirely from vocabulary.yaml. If the view has drifted, so that
+it shows terms the yaml doesn't have (tutorials can write to the view without adding yaml
+entries), a regen silently erases those terms. `export-tc` measures this and reports
+`view_drift` (on `--dry-run` too):
+
+- `md_only_terms: 0`: say the view is stale until they run `/tutorial-creator vocab regen-md`.
+- Above zero: do not recommend the regen. Tell the user how many terms exist only in the view
+  (show a few from `examples`), and that a regen would erase them. Offer two paths: get those
+  terms into the yaml first, or add the exported terms to VOCABULARY.md by hand without a full
+  rebuild.
+
+lexicon never regenerates or edits another tool's files other than the append described above.
+
+### If the user undoes an export on the tutorial-creator side
+
+`/tutorial-creator vocab undo` removes the terms from their file but cannot see lexicon's
+`exported_to_tc` stamps. Clear them so a later export does not look like a repeat:
+`update <slug> --entries -` with `[{"term": "<t>", "exported_to_tc": null}, ...]`.
+
+### Reading their file
+
+Judge their data through the parser (`import-tc`, or `yaml.safe_load`), not from the raw text.
+YAML escapes look like errors when read raw: inside a single-quoted string, `''` is a single
+apostrophe. Before you report a problem in their file, confirm it in the parsed value.
+
+## Import: tutorial-creator → lexicon
+
+```bash
+python3 "$S" import-tc --match "actor|isolation" --since 2026-09-01 --limit 40
+python3 "$S" import-tc --type concept pattern
+```
+
+This writes nothing. It returns entries already in lexicon shape, each with a `needs` list naming
+empty required fields (often `example`, since older tutorial-creator entries have none). Then:
+
+1. Route each entry to a list by scope. Leave out ones no list's scope covers, and say so.
+2. Fill the `needs` fields following the writing rules in SKILL.md. Tell the user which examples
+   you wrote, since they did not come from the source.
+3. Run `dupes` and the semantic pass, as in a normal scan.
+4. Confirm, then `add`. It strips the working `needs` key, so there is no need to remove it first.
+
+Mastery status stays in tutorial-creator. lexicon does not track learning state.
+
+For a large import (the user's vocabulary may hold hundreds of terms), work in batches of about
+20 to 40. Show progress, and let the user stop between batches.

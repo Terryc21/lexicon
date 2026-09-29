@@ -1,0 +1,59 @@
+{
+  "skill_name": "lexicon",
+  "evals": [
+    {
+      "id": 1,
+      "name": "first-run-html-article",
+      "prompt": "I'm getting into Swift concurrency and want to start keeping a vocab list. Scan this article I saved and build the list from it: fixtures/swift-concurrency-article.html",
+      "user_answers": "Scope: subject Swift, level intermediate, include concepts + keywords/attributes + multi-word phrases, exclude names from the article author's own app and product names; known terms: async, await. Approve every candidate you recommend. Accept the drafts as written.",
+      "expected_output": "A new Swift list with that scope; 6+ entries each with definition, example, use_case; no async/await; no app-specific identifiers; definitions free of the app name; a Markdown view.",
+      "files": [
+        "fixtures/swift-concurrency-article.html"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "session-scan-two-lists",
+      "prompt": "Go through my session from last week (the transcript is at fixtures/past-session-v2.jsonl) and add anything worth learning to my vocab lists.",
+      "user_answers": "Add every new term you recommend. For any possible duplicate of an existing entry, keep the existing entry and fold the new form in as an alias rather than adding a second entry. Accept drafts as written.",
+      "expected_output": "AI terms routed to the AI list, no second MainActor entry, RAG folded into retrieval-augmented generation as an alias, new entries complete with provenance. Also: 'token' is a known term in the AI list's scope and must not be added; 'reference cycle' from the session is folded into the existing 'retain cycle' as an alias.",
+      "files": [
+        "fixtures/e2v2-home",
+        "fixtures/past-session-v2.jsonl"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "export-to-tutorial-creator",
+      "prompt": "Send my Swift vocab terms over to tutorial-creator so I can review them with flashcards. My tutorial vocabulary file is fixtures/tc/vocabulary.yaml.",
+      "user_answers": "Yes, go ahead after showing me what will change.",
+      "expected_output": "Three new terms appended to the tutorial-creator file without altering existing bytes; @MainActor skipped as already present; appended entries start at status new; undo marker written; user told to run regen-md. Exported entries use first_encountered.context 'external source' so tutorial-creator's regen-md groups them.",
+      "files": [
+        "fixtures/e3-home",
+        "fixtures/tc/vocabulary.yaml"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "tc-roundtrip-regen-undo",
+      "prompt": "Send my Swift vocab terms to tutorial-creator and refresh its VOCABULARY.md so they show up. My tutorial project is fixtures/tcproj.",
+      "user_answers": "Yes, go ahead after showing me what will change. Follow-up after the refresh: 'Actually, undo that export. I want to redo it later.'",
+      "expected_output": "Refreshed VOCABULARY.md lists the three exported terms and keeps all prior terms; tutorial-creator's vocab undo then restores the exact original term set, consumes the marker, and a second refresh drops the three terms.",
+      "files": [
+        "fixtures/e3-home",
+        "fixtures/tcproj"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "import-from-tutorial-creator",
+      "prompt": "Start a Testing vocab list and pull in the testing-related terms I already have in tutorial-creator.",
+      "user_answers": "Scope: subject Software testing, level intermediate, include concepts, techniques, and multi-word phrases; exclude tool and product names; no known terms. Import every testing term you find. Accept the drafts as written, including any examples you write.",
+      "expected_output": "A new Testing list with 8+ imported terms, all complete, examples split out of use_case, no learning state copied, tutorial-creator provenance recorded, tutorial-creator file untouched, Swift list untouched.",
+      "files": [
+        "fixtures/e3-home",
+        "fixtures/tc/vocabulary.yaml"
+      ]
+    }
+  ]
+}
