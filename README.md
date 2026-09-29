@@ -65,3 +65,7 @@ last 20 versions of a list. Set `LEXICON_HOME` to keep them somewhere else.
 learning, and how to write an entry a stranger can use. `skills/lexicon/scripts/lexicon.py`
 handles the parts that must be exact every time: storage, validation, duplicate matching,
 backups, and the tutorial-creator file format.
+
+## License
+
+Apache License 2.0. See `LICENSE` and `NOTICE`.
