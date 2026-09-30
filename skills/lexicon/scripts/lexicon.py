@@ -780,6 +780,31 @@ def to_tc(e: dict, list_name: str) -> dict:
     }
 
 
+def clean_tc_notes(notes: str) -> str:
+    """Drop tutorial-creator's lesson bookkeeping from a note: the `First seen: Day N` lead-in (the Day
+    is already in first_encountered.context), the `Also seen in:` repeat-row line, and the
+    `Per-Day wording` block. A source, merge history and free text stay."""
+    out, in_block = [], False
+    for line in notes.split("\n"):
+        if in_block:
+            if re.match(r"Day \d+(\.\d+)?:", line):
+                continue
+            in_block = False
+        if line.startswith("Per-Day wording"):
+            in_block = True
+            continue
+        if line.startswith("Also seen in:"):
+            continue
+        line = re.sub(r"^(First seen: Day \d+(?:\.\d+)?) -- Also seen in:.*$", r"\1", line)
+        line = re.sub(r"^First seen: Day \d+(?:\.\d+)?\s*(?:--\s*)?", "", line)
+        out.append(line.rstrip())
+    while out and out[0] in ("", "---"):
+        out.pop(0)
+    while out and out[-1] in ("", "---"):
+        out.pop()
+    return "\n".join(out)
+
+
 def from_tc(t: dict) -> dict:
     use = (t.get("use_case") or "").strip()
     ex = ""
@@ -801,7 +826,7 @@ def from_tc(t: dict) -> dict:
         "first_encountered": {"source": fe.get("source_file", "") or "",
                               "context": f"imported from tutorial-creator; {fe.get('context', '')}".strip("; "),
                               "date": str(fe.get("date") or today())},
-        "notes": (t.get("notes") or "").strip() if isinstance(t.get("notes"), str) else "",
+        "notes": clean_tc_notes(t["notes"].strip()) if isinstance(t.get("notes"), str) else "",
         "needs": [k for k, v in (("example", ex), ("use_case", use), ("definition", t.get("definition"))) if not v],
     }
 
@@ -817,7 +842,7 @@ def view_drift(vocab: str, entries: list[dict]) -> dict:
     """Terms tutorial-creator's VOCABULARY.md shows that its vocabulary.yaml lacks.
 
     Such terms are invisible to vocab review and flashcards. tutorial-creator's regen-md asks
-    about each one instead of erasing it (since its 09/28/2026 in-place update; earlier releases
+    about each one instead of erasing it (since tutorial-creator 2.1.0; earlier releases
     rebuilt the view from the yaml and erased them). Rows are matched to terms the way regen-md
     matches them, so this count agrees with the number it will ask about.
     """
@@ -898,11 +923,12 @@ def cmd_export_tc(args):
                "terms get rows; if the view has drifted from the yaml, it also fixes other rows and rebuilds "
                "the Cumulative Count. ")
     if drift["md_only_terms"]:
-        nxt += (f"It will also ask about {drift['md_only_terms']} terms the view shows that "
+        nxt += (f"It will also ask about {drift['md_only_terms']} term{'' if drift['md_only_terms'] == 1 else 's'} the view shows that "
                 "vocabulary.yaml lacks: keep them or add them to the yaml, since removing one loses it. "
-                "(A tutorial-creator older than 09/28/2026 erases those terms on a regen instead; "
+                "(A tutorial-creator older than 2.1.0 erases those terms on a regen instead; "
                 "update it first.) ")
-    nxt += "To reverse this export within 24h: `/tutorial-creator vocab undo`."
+    nxt += ("To reverse this export within 24h: `/tutorial-creator vocab undo`. (Installed as a plugin? "
+            "Type `/tutorial-creator:tutorial-creator` instead of `/tutorial-creator`.)")
     out({"ok": True, "vocab": vocab, "added": [r["term"] for r in to_write], "skipped_existing": skipped,
          "undo_marker": marker, "view_drift": drift, "next": nxt})
 

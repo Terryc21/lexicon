@@ -5,6 +5,18 @@ a learning state (`status`: new, reviewing, mastered, or confused, plus `test_hi
 `vocab review` and `vocab flashcards` commands use. lexicon keeps subject lists for capture and
 reference. The interop moves terms between them without either tool taking over the other's job.
 
+Commands below are written the hand-install way, `/tutorial-creator vocab undo`. If the user installed
+tutorial-creator as a plugin, they type `/tutorial-creator:tutorial-creator vocab undo` instead. Use
+whichever form they have.
+
+## lexicon or `vocab ingest`?
+
+tutorial-creator's `vocab ingest` also reads a source and adds its terms, straight into the review
+deck. Either is fine when the user just wants to study a source's terms. Suggest lexicon when they
+want a glossary kept by subject: scopes, duplicate checks across lists, aliases. The two connect both
+ways: **Export** sends terms to the review deck, and **Import** brings terms `vocab ingest` added
+into a list.
+
 ## Finding the file
 
 `lexicon.py status` reports `tutorial_creator_vocab`. It resolves in this order:
@@ -33,6 +45,7 @@ ask the user where their tutorial project is. Don't search the disk for it.
 | `aliases`, `distinct_from`, `seen_in` | (none) | not carried; tutorial-creator has no such fields |
 | (none) | `status: new`, `test_history: []`, `applied_test_history: []` | exported terms start fresh in the review cycle |
 | (none) | `notes` | `Exported from lexicon list "<name>" on <date>. First seen: <context>. Source: <url or label>.` |
+| `notes` (on import) | `notes` | tutorial-creator's lesson bookkeeping (`First seen: Day N`, `Also seen in:`, the `Per-Day wording` block) is dropped. A source and merge history stay. |
 
 ## Export: lexicon → tutorial-creator
 
@@ -72,11 +85,21 @@ ask about.
 - Above zero: tell them the same, and that regen-md will ask about those terms (show a few from
   `examples`). Recommend keeping them or adding them to the yaml; removing one loses it.
 
-This relies on tutorial-creator's in-place `regen-md` (09/28/2026 on). An older one rebuilds the
-view from the yaml and erases view-only terms, so with an older tutorial-creator, don't recommend
-the regen while `md_only_terms` is above zero.
+This relies on tutorial-creator's in-place `regen-md` (tutorial-creator 2.1.0 or later). An older one
+rebuilds the view from the yaml and erases view-only terms, so with an older tutorial-creator, don't
+recommend the regen while `md_only_terms` is above zero. `claude plugin list` shows a plugin's
+version. A plugin stays on the old one until updated (`claude plugin marketplace update
+tutorial-creator`, then `claude plugin update tutorial-creator@tutorial-creator`); a hand install
+needs a `git pull` in its folder.
 
 lexicon never regenerates or edits another tool's files other than the append described above.
+
+### Flashcards of just the exported terms
+
+Every exported term's `notes` start `Exported from lexicon list ...`, and tutorial-creator's
+`--source` filter searches notes, so `vocab flashcards --source=lexicon` makes cards from only the
+terms sent from lexicon. The date filters (`--date-from`, `--date-to`) use the day each term was
+first met, not the day it was sent.
 
 ### If the user undoes an export on the tutorial-creator side
 
@@ -98,7 +121,11 @@ python3 "$S" import-tc --type concept pattern
 ```
 
 This writes nothing. It returns entries already in lexicon shape, each with a `needs` list naming
-empty required fields (often `example`, since older tutorial-creator entries have none). Then:
+empty required fields. Older tutorial-creator entries usually have neither an `example` nor a
+`use_case` (on one real 305-term vocabulary, 09/30/2026: 284 had no example and 236 no use case);
+entries from `vocab ingest` usually have a use case. Notes come across with tutorial-creator's lesson
+bookkeeping removed (`First seen: Day N`, `Also seen in:`, the `Per-Day wording` block). A source URL
+or file and any merge history stay. Then:
 
 1. Route each entry to a list by scope. Leave out ones no list's scope covers, and say so.
 2. Fill the `needs` fields following the writing rules in SKILL.md. Tell the user which examples
@@ -114,4 +141,6 @@ empty required fields (often `example`, since older tutorial-creator entries hav
 Mastery status stays in tutorial-creator. lexicon does not track learning state.
 
 For a large import (the user's vocabulary may hold hundreds of terms), work in batches of at most
-20, the same limit as a scan screen. Show progress, and let the user stop between batches.
+20, the same limit as a scan screen. Show progress, and let the user stop between batches. Most of a
+big import is writing missing examples and use cases, so offer a slice first (`--match` or `--since`)
+before committing to the whole vocabulary.

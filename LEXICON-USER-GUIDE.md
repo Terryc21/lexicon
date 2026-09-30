@@ -72,8 +72,17 @@ Ask in plain words.
   vocabulary file. It may ask about terms that exist only in the view: keep them or add them to the
   vocabulary file, and don't remove them.
 - **Undo a send** within 24 hours with `/tutorial-creator vocab undo`.
+- **Installed tutorial-creator as a plugin?** Type `/tutorial-creator:tutorial-creator` wherever
+  this guide says `/tutorial-creator`.
+- **Flashcards of just what you sent:** tell tutorial-creator `vocab flashcards --source=lexicon`.
+  Every sent term is marked as coming from lexicon, so the cards cover only those.
+- **Two ways to capture terms.** tutorial-creator's `vocab ingest` also reads a source and adds its
+  terms straight to your review deck. Use lexicon when you want a glossary kept by subject, with
+  duplicate checks. Terms added with `vocab ingest` can come into a list with an import.
 - **Import** the other way: "start a Testing list from my tutorial-creator terms". lexicon rewords
-  entries that name your app, files or people, and tells you which ones it changed.
+  entries that name your app, files or people, and tells you which ones it changed. Most older
+  terms have no example or use case, so lexicon writes those and tells you which it wrote. For a
+  big vocabulary, start with a slice: a keyword, or terms since a date.
 
 ## Where things live
 

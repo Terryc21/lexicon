@@ -244,6 +244,10 @@ lexicon stores terms by subject; tutorial-creator's `vocabulary.yaml` is where t
 (review sessions, mastery status, flashcards). Moving terms between the two is explicit and
 user-confirmed. Read `references/tutorial-creator.md` before either direction.
 
+tutorial-creator's own `vocab ingest` also captures terms from a source, straight into its review
+deck. That is fine when the user only wants to study a source's terms; lexicon is for glossaries
+kept by subject. Terms `vocab ingest` added can come into a list with **Import**.
+
 - **Export** (lexicon to tutorial-creator): run `export-tc <slug> <terms...> --dry-run` first and
   show what would be added and what would be skipped as already there. Then run it without
   `--dry-run`. The script appends to the end of their file without rewriting anything already in
@@ -254,10 +258,15 @@ user-confirmed. Read `references/tutorial-creator.md` before either direction.
   `view_drift.md_only_terms` is above zero, their view also shows terms their yaml lacks, and
   regen-md will ask about each one; tell the user to keep those terms or add them to the yaml, not
   remove them. Also mention that `/tutorial-creator vocab undo` reverses the export within 24 hours.
+  If they installed tutorial-creator as a plugin, those commands start `/tutorial-creator:tutorial-creator`
+  (the `next` message says so). To study just the exported terms, `vocab flashcards --source=lexicon`
+  makes cards from only those.
 - **Import** (tutorial-creator to lexicon): `import-tc [--match REGEX] [--type T...] [--since DATE]`
   returns mapped entries without writing anything. Route them to lists by scope, fill any field
-  listed in `needs` (usually `example`), and reword any `definition`, `use_case` or `notes` that
-  names the user's app, files or people (`needs` does not flag those). Then run the duplicate steps
+  listed in `needs` (older entries usually need both `example` and `use_case`), and reword any
+  `definition`, `use_case` or `notes` that names the user's app, files or people (`needs` does not
+  flag those; the script already strips tutorial-creator's lesson bookkeeping from `notes`). For a
+  big vocabulary, offer a slice first (`--match`, `--since`). Then run the duplicate steps
   (each imported term matches its own tutorial-creator entry; ignore that), confirm, then `add`.
   Learning state (status, test history) stays in tutorial-creator.
 
