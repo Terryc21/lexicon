@@ -1,0 +1,3 @@
+schema_version: 1
+default_list: swift
+tutorial_creator_vocab: fixtures/tc/vocabulary.yaml

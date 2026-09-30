@@ -9,11 +9,49 @@ $LEXICON_HOME/                 default ~/.claude/lexicon
 │   ├── swift.yaml             source of truth, one file per list
 │   └── swift.md               generated view; rewritten on every save
 └── .backups/
-    └── swift--<timestamp>-<pid>.yaml   previous version, last 20 kept per list
+    └── swift--<timestamp-with-microseconds>-<unique-id>.yaml   previous version, last 20 kept per list
 ```
 
-Every write goes through `lexicon.py`, which backs up, validates, sorts entries alphabetically
-(ignoring leading `@`, `#`, `$`, `.`), writes atomically, and re-renders the `.md`.
+List changes go through `lexicon.py`. It validates the complete proposed list, including field
+types, term/alias identities, and same-list relationships, then prepares the sorted YAML and
+Markdown before writing. Rejected changes leave both files intact. Existing lists get backups;
+the latest 20 are kept. `validate` returns JSON and exits nonzero when issues are found.
+
+A schema version other than 1 is refused before modification. Use a compatible Lexicon version;
+do not manually relabel a newer file as version 1. List identifiers must be lowercase letters
+or digits separated by single hyphens, and resolved storage paths must remain inside the home.
+
+### Multi-file writes and recovery
+
+Lexicon serializes its own writers with a `.write-lock` directory in the home; exports also use
+`vocabulary.yaml.lexicon-lock` beside the destination. Other tools do not honor these locks:
+avoid editing the same vocabulary concurrently. Byte checks catch changes between phases,
+but cannot eliminate every race with another tool.
+
+Before replacing files, an operation records its original and planned bytes in
+`.recovery/<id>/`, with a `manifest.json` mapping numbered `before` and `after` files to paths.
+Ordinary write failures roll back completed replacements. If restoration fails or an external
+change is detected, originals are retained and the error identifies the recovery directory.
+Further writes are blocked while recovery data remains. A process interruption can also leave
+a lock and recovery data; this is recoverable storage, not a claim of power-loss atomicity.
+
+For recovery: stop writers, inspect the manifest and compare current files with the recorded
+before/after bytes, then restore only the affected paths after accounting for any external edits.
+Do not blindly copy over another tool's changes. Once the intended state is verified, remove
+that recovery directory and any stale lock directories. Read-only inspection remains available.
+
+### Relationships during rename, move, and copy
+
+Renaming rewrites `related_terms` and `distinct_from` references and keeps the old name as an
+alias. Conflicting canonical names or aliases are rejected. Confirmed normalized distinctions
+use `distinct_from`; ambiguous lookup requires an exact stored name.
+
+Moves and copies process each source entry once, even when selected through multiple aliases.
+Relationships whose targets exist in the resulting list are kept; other relationships are
+removed from the affected entries and reported in `removed_relationships`. Explain this policy
+when proposing a move or copy, and report the removed links afterward. Source and destination
+changes in a move share one rollback boundary. `undo` still operates on one list at a time;
+restoring a move requires reviewing both lists' backups.
 
 ## config.yaml
 

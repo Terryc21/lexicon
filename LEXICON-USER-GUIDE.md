@@ -17,7 +17,7 @@ Type `/lexicon`, or just say what you want:
 | "What terms from this session should I learn?" | Scans the current conversation |
 | "Go through my last session" | Finds an older session and scans it |
 | "Add 'actor reentrancy' to my Swift list" | Skips the scan and drafts just that term |
-| "Show my Swift list" | Lists the terms and points you to the readable `.md` file |
+| "Show my Swift list" | Lists the terms and points you to the readable `.md` and searchable `.html` files |
 
 ## The first time: a short interview
 
@@ -37,7 +37,7 @@ it. It imports nothing unless you ask.
 3. You answer `all`, `1,3,5` or `none`, and settle any possible duplicates (`merge`, `keep both`
    or `skip`).
 4. It shows the drafted entries together. You accept, edit, or drop them.
-5. It saves them, then reports the new count and where the readable `.md` file is.
+5. It saves them, then reports the new count and where the readable `.md` and searchable `.html` files are.
 
 ## What you can point it at
 
@@ -57,7 +57,8 @@ it. It imports nothing unless you ask.
 Ask in plain words.
 
 - **Edit:** "change the definition of X" or "add an alias for X".
-- **Move:** "move these terms to my AI list".
+- **Move:** "move these terms to my AI list". Links to terms outside the resulting list are
+  removed and reported; links between terms moved together are kept.
 - **Find duplicates:** "check my lists for duplicates". lexicon catches spelling variants itself,
   but it never merges two terms that mean the same thing in different words without asking you.
 - **Undo:** "undo that". lexicon shows what would change first, and can step back through the last
@@ -66,7 +67,7 @@ Ask in plain words.
 ## Working with tutorial-creator
 
 - **Send terms** for flashcards or review: "send my Swift terms to tutorial-creator". lexicon shows
-  what it would add, then only appends. Existing entries are never touched, and terms
+  what it would add, then preserves existing entries (an empty list is initialized). Existing entries are never touched, and terms
   tutorial-creator already has are skipped.
 - **After a send, run `/tutorial-creator vocab regen-md`.** It brings VOCABULARY.md in step with the
   vocabulary file. It may ask about terms that exist only in the view: keep them or add them to the
@@ -86,8 +87,8 @@ Ask in plain words.
 
 ## Where things live
 
-Lists are in `~/.claude/lexicon/lists/`, one `.yaml` file per list with a readable `.md` file beside
-it. The folder is created the first time you use lexicon. Set `LEXICON_HOME` to keep your lists
+Lists are in `~/.claude/lexicon/lists/`, one `.yaml` file per list with a readable `.md` file and a searchable `.html` file beside
+it. Open the `.html` in any browser for search, an A-Z jump bar, a type filter, expand and collapse, links between related terms, and light or dark mode. It works offline. The folder is created the first time you use lexicon. Set `LEXICON_HOME` to keep your lists
 somewhere else. Don't edit the `.yaml` files by hand; ask Claude, so every change is validated and
 backed up first.
 
@@ -98,3 +99,9 @@ backed up first.
 - Your **level** matters most. If proposals feel too basic or too advanced, say so and lexicon can
   change the list's scope.
 - Terms from an older session are dated with that session's date, not today's.
+
+- Rejected changes leave your glossary unchanged. If a write fails, Lexicon rolls back the
+  operation. If recovery needs attention, it reports where the original copies are and blocks
+  further changes until recovery is complete. Ask your coding assistant to inspect those copies.
+- Avoid editing a vocabulary in two tools at once. A second export in the same second may ask
+  you to retry shortly; this protects the earlier export's undo record.

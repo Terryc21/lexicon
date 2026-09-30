@@ -17,8 +17,14 @@ overrides both (used by tests and evals so they never touch real lists).
 from __future__ import annotations
 
 import argparse
+import contextlib
+import copy
+import tempfile
+import uuid
+from pathlib import Path
 import datetime as dt
 import glob
+import html as htmllib
 import html.parser
 import json
 import os
@@ -89,7 +95,7 @@ def ydump(obj) -> str:
 
 
 def load_json_arg(path: str):
-    raw = sys.stdin.read() if path == "-" else open(path, encoding="utf-8").read()
+    raw = sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
     return json.loads(raw)
 
 
@@ -150,12 +156,27 @@ def lists_dir(h: str) -> str:
     return os.path.join(h, "lists")
 
 
+def checked_slug(slug: str) -> str:
+    if not isinstance(slug, str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug):
+        fail("List identifiers must contain lowercase letters, digits, and single hyphens.")
+    return slug
+
+
+def storage_path(h: str, folder: str, name: str) -> str:
+    root = os.path.realpath(h)
+    base = os.path.realpath(os.path.join(root, folder))
+    path = os.path.realpath(os.path.join(base, name))
+    if os.path.commonpath([root, base]) != root or os.path.commonpath([base, path]) != base:
+        fail("Storage path escapes the selected Lexicon home.")
+    return path
+
+
 def list_path(h: str, slug: str) -> str:
-    return os.path.join(lists_dir(h), f"{slug}.yaml")
+    return storage_path(h, "lists", f"{checked_slug(slug)}.yaml")
 
 
 def config_path(h: str) -> str:
-    return os.path.join(h, "config.yaml")
+    return storage_path(h, "", "config.yaml")
 
 
 def read_yaml(path: str):
@@ -167,45 +188,154 @@ def read_config(h: str) -> dict:
     p = config_path(h)
     if not os.path.exists(p):
         return {}
-    return read_yaml(p) or {}
+    data = read_yaml(p)
+    if not isinstance(data, dict) or data.get("schema_version") != SCHEMA_VERSION:
+        fail("Unsupported config schema; use a compatible Lexicon version. Nothing changed.")
+    return data
+
+
+def file_bytes(path):
+    if os.path.lexists(path):
+        if os.path.islink(path) or not os.path.isfile(path):
+            raise ValueError(f"Expected a regular file: {path}")
+        with open(path, "rb") as f:
+            return f.read()
+    return None
+
+
+def write_bytes_atomic(path, content, *, exclusive=False):
+    fd, tmp = tempfile.mkstemp(prefix=".lexicon-", dir=os.path.dirname(path))
+    try:
+        if os.path.exists(path):
+            os.chmod(tmp, os.stat(path).st_mode & 0o777)
+        with os.fdopen(fd, "wb") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        if exclusive:
+            # Atomic no-clobber publication: even an external marker racing this write survives.
+            os.link(tmp, path)
+        else:
+            os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
 
 
 def write_atomic(path: str, text: str):
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.replace(tmp, path)
+    write_bytes_atomic(path, text.encode("utf-8"))
 
 
-def backup(h: str, slug: str):
-    src = list_path(h, slug)
-    if not os.path.exists(src):
-        return None
-    bdir = os.path.join(h, ".backups")
-    os.makedirs(bdir, exist_ok=True)
-    dst = os.path.join(bdir, f"{slug}--{stamp()}-{os.getpid()}.yaml")
-    shutil.copy2(src, dst)
-    olds = sorted(glob.glob(os.path.join(bdir, f"{slug}--*.yaml")))
-    for o in olds[:-BACKUPS_KEPT]:
-        os.remove(o)
-    return dst
+@contextlib.contextmanager
+def writer_lock(path):
+    """Cooperating writers serialize; a crash leaves an explicit, inspectable lock."""
+    try:
+        os.mkdir(path)
+    except FileExistsError:
+        fail(f"Another write or an interrupted write holds {path}. "
+             "If no Lexicon process is running, inspect .recovery in the home before removing the lock.")
+    try:
+        yield
+    finally:
+        os.rmdir(path)
+
+
+def commit_files(h, changes, expected=None):
+    """Prepare everything first; retain original and planned bytes if rollback cannot finish.
+
+    Locks cover Lexicon writers. Byte comparisons detect other writers between phases;
+    they are not a cross-tool lock. Never overwrite a detected external change on rollback.
+    """
+    originals = {p: file_bytes(p) for p in changes}
+    for path, before in (expected or {}).items():
+        if file_bytes(path) != before:
+            raise ValueError(f"File changed while preparing the operation: {path}; retry.")
+    recovery = storage_path(h, ".recovery", uuid.uuid4().hex)
+    os.makedirs(recovery)
+    applied = []
+    try:
+        manifest = []
+        for i, (path, planned) in enumerate(changes.items()):
+            old = originals[path]
+            for label, content in (("before", old), ("after", planned)):
+                if content is not None:
+                    write_bytes_atomic(os.path.join(recovery, f"{i}.{label}"), content)
+            manifest.append({"path": path, "before": old is not None, "after": planned is not None})
+        write_atomic(os.path.join(recovery, "manifest.json"), json.dumps(manifest, indent=2))
+        for path, planned in changes.items():
+            if file_bytes(path) != originals[path]:
+                raise ValueError(f"Concurrent change detected: {path}")
+            if planned is None:
+                if originals[path] is not None:
+                    os.remove(path)
+            else:
+                write_bytes_atomic(path, planned, exclusive=originals[path] is None)
+            applied.append(path)
+        # A non-cooperating writer may have touched an earlier file during later phases.
+        if any(file_bytes(p) != content for p, content in changes.items()):
+            raise ValueError("Concurrent change detected after writing.")
+    except BaseException as error:
+        failures = []
+        for path in reversed(applied):
+            try:
+                if file_bytes(path) != changes[path]:
+                    raise ValueError("external change; preserved")
+                if originals[path] is None:
+                    os.remove(path)
+                else:
+                    write_bytes_atomic(path, originals[path])
+            except (OSError, ValueError) as rollback_error:
+                failures.append(f"{path}: {rollback_error}")
+        if failures:
+            raise RuntimeError(f"Operation failed ({error}); recovery copies retained at {recovery}. "
+                               + "; ".join(failures)) from error
+        shutil.rmtree(recovery)
+        raise
+    shutil.rmtree(recovery)
 
 
 def load_list(h: str, slug: str) -> dict:
     p = list_path(h, slug)
     if not os.path.exists(p):
         fail(f"No list named '{slug}'.", available=[l["slug"] for l in all_lists(h)])
-    data = read_yaml(p) or {}
-    data.setdefault("entries", [])
+    data = read_yaml(p)
+    if not isinstance(data, dict) or data.get("schema_version") != SCHEMA_VERSION:
+        fail("Unsupported list schema; use a compatible Lexicon version. Nothing changed.")
+    if data.get("slug") != slug or not isinstance(data.get("entries"), list):
+        fail("List structure or stored identifier does not match its file. Nothing changed.")
     return data
 
 
+def prepared_list(h, data, with_backup=True):
+    issues = list_problems(data)
+    if issues:
+        fail("Nothing written: proposed list is invalid.", issues=issues)
+    data["entries"] = sorted(data["entries"], key=lambda e: sort_key(e["term"]))
+    slug = checked_slug(data["slug"])
+    path = list_path(h, slug)
+    changes = {path: (header_comment(data) + ydump(data)).encode("utf-8"),
+               storage_path(h, "lists", f"{slug}.md"): render_md(data).encode("utf-8"),
+               storage_path(h, "lists", f"{slug}.html"): render_html(data).encode("utf-8")}
+    original = file_bytes(path)
+    if with_backup and original is not None:
+        backup_path = storage_path(h, ".backups", f"{slug}--{dt.datetime.now().strftime('%Y-%m-%dT%H-%M-%S.%f')}-{uuid.uuid4().hex}.yaml")
+        os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+        changes[backup_path] = original
+    return changes
+
+
+def prune_backups(h, slug):
+    pattern = storage_path(h, ".backups", f"{checked_slug(slug)}--*.yaml")
+    for path in sorted(glob.glob(pattern))[:-BACKUPS_KEPT]:
+        try:
+            os.remove(path)
+        except OSError:
+            pass  # Retaining extra backups is safer than failing a committed operation.
+
+
 def save_list(h: str, data: dict):
-    slug = data["slug"]
-    backup(h, slug)
-    data["entries"] = sorted(data.get("entries", []), key=lambda e: sort_key(e.get("term", "")))
-    write_atomic(list_path(h, slug), header_comment(data) + ydump(data))
-    render_to_file(h, data)
+    commit_files(h, prepared_list(h, data))
+    prune_backups(h, data["slug"])
 
 
 def header_comment(data: dict) -> str:
@@ -222,7 +352,7 @@ def all_lists(h: str) -> list[dict]:
             res.append({"slug": os.path.basename(p)[:-5], "error": str(e)})
             continue
         res.append({
-            "slug": d.get("slug"),
+            "slug": os.path.basename(p)[:-5],
             "name": d.get("name"),
             "subject": (d.get("scope") or {}).get("subject"),
             "level": (d.get("scope") or {}).get("level"),
@@ -259,15 +389,83 @@ def clean_entry(e: dict) -> dict:
 
 
 def entry_problems(e: dict) -> list[str]:
+    if not isinstance(e, dict):
+        return ["entry must be an object"]
     probs = []
     for k in REQUIRED_TEXT:
         v = e.get(k)
         if not isinstance(v, str) or not v.strip():
             probs.append(f"'{k}' is missing or empty")
-    for k in ("aliases", "related_terms", "distinct_from", "seen_in"):
-        if k in e and not isinstance(e[k], list):
-            probs.append(f"'{k}' must be a list")
+    if isinstance(e.get("term"), str) and any(c in e["term"] for c in "\r\n"):
+        probs.append("term must fit on one line (including in undo markers)")
+    for k in ("aliases", "related_terms", "distinct_from"):
+        if k in e and (not isinstance(e[k], list) or any(not isinstance(x, str) or not x.strip() for x in e[k])):
+            probs.append(f"'{k}' must be a list of nonempty strings")
+    for k in ("type", "notes"):
+        if k in e and not isinstance(e[k], str):
+            probs.append(f"'{k}' must be text")
+    sightings = e.get("seen_in", [])
+    if not isinstance(sightings, list):
+        probs.append("'seen_in' must be a list")
+        sightings = []
+    for item in ([e["first_encountered"]] if "first_encountered" in e else []) + sightings:
+        if not isinstance(item, dict):
+            probs.append("provenance must be an object")
+            continue
+        for k in ("source", "context"):
+            if k in item and not isinstance(item[k], str):
+                probs.append(f"provenance.{k} must be text")
+        if "date" in item and item["date"] is not None and not isinstance(item["date"], (str, dt.date)):
+            probs.append("provenance.date must be a date or text")
     return probs
+
+
+def list_problems(data):
+    if not isinstance(data, dict):
+        return ["list must be an object"]
+    issues = []
+    if data.get("schema_version") != SCHEMA_VERSION:
+        issues.append("unsupported schema_version")
+    if not isinstance(data.get("name"), str) or not data["name"].strip():
+        issues.append("name must be nonempty text")
+    slug = data.get("slug")
+    if not isinstance(slug, str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug):
+        issues.append("invalid slug")
+    sc = data.get("scope")
+    if not isinstance(sc, dict):
+        issues.append("scope must be an object")
+    else:
+        if sc.get("level") not in LEVELS:
+            issues.append("scope.level missing or invalid")
+        for key in ("include", "exclude", "known_terms"):
+            if not isinstance(sc.get(key, []), list) or any(not isinstance(x, str) for x in sc.get(key, [])):
+                issues.append(f"scope.{key} must be a list of strings")
+        for key in ("subject", "notes"):
+            if key in sc and not isinstance(sc[key], str):
+                issues.append(f"scope.{key} must be text")
+    entries = data.get("entries")
+    if not isinstance(entries, list):
+        return issues + ["entries must be a list"]
+    for i, e in enumerate(entries):
+        issues.extend(f"entry {i + 1}: {p}" for p in entry_problems(e))
+    if issues:
+        return issues
+    terms = {exact(e["term"]) for e in entries}
+    for i, e in enumerate(entries):
+        for r in e.get("related_terms", []):
+            if exact(r) not in terms:
+                issues.append(f"{e['term']}: related term '{r}' is not in this list (dangling)")
+        forms = [e["term"]] + e.get("aliases", [])
+        for other in entries[:i]:
+            other_forms = [other["term"]] + other.get("aliases", [])
+            if {exact(x) for x in forms} & {exact(x) for x in other_forms}:
+                issues.append(f"Ambiguous term or alias: {e['term']} / {other['term']}")
+            elif match(forms, index_terms([other], data["slug"])):
+                distinct = (exact(other["term"]) in {exact(x) for x in e.get("distinct_from", [])}
+                            or exact(e["term"]) in {exact(x) for x in other.get("distinct_from", [])})
+                if not distinct:
+                    issues.append(f"Unresolved duplicate: {e['term']} / {other['term']}; merge or record distinct_from")
+    return issues
 
 
 # --------------------------------------------------------------- dup engine
@@ -304,8 +502,10 @@ def match(cand_forms: list[str], idx: list[dict], exclude_terms: set[str] = froz
 
 
 def tc_entries(path: str) -> list[dict]:
-    data = read_yaml(path) or []
-    if not isinstance(data, list):
+    data = read_yaml(path)
+    if data is None:
+        data = []
+    if not isinstance(data, list) or any(not isinstance(e, dict) or not isinstance(e.get("term"), str) for e in data):
         fail(f"{path} is not a tutorial-creator vocabulary.yaml (expected a top-level list).")
     return data
 
@@ -392,12 +592,13 @@ def cmd_new_list(args):
         },
         "entries": [],
     }
-    save_list(h, data)
+    changes = prepared_list(h, data)
     cfg = read_config(h)
     if not cfg.get("default_list"):
         cfg.setdefault("schema_version", SCHEMA_VERSION)
         cfg["default_list"] = slug
-        write_atomic(config_path(h), ydump(cfg))
+        changes[config_path(h)] = ydump(cfg).encode("utf-8")
+    commit_files(h, changes)
     out({"ok": True, "slug": slug, "path": list_path(h, slug), "scope": data["scope"]})
 
 
@@ -496,14 +697,16 @@ def cmd_add(args):
     for e in new:
         p = entry_problems(e)
         if p:
-            problems.append({"term": e.get("term"), "problems": p})
+            problems.append({"term": e.get("term") if isinstance(e, dict) else None, "problems": p})
             continue
         hits = [x for x in match([e["term"]] + (e.get("aliases") or []), idx)
                 if exact(x["term"]) not in {exact(d) for d in e.get("distinct_from") or []}]
-        if hits and not e.pop("confirmed_distinct", False):
+        confirmed = e.pop("confirmed_distinct", False)
+        if hits and not confirmed:
             clashes.append({"term": e["term"], "matches": hits})
             continue
-        e.pop("confirmed_distinct", None)
+        if confirmed:
+            e["distinct_from"] = list(dict.fromkeys(e.get("distinct_from", []) + [x["term"] for x in hits]))
         ce = clean_entry(e)
         data["entries"].append(ce)
         idx += index_terms([ce], args.slug)
@@ -524,9 +727,14 @@ def find_entry(data: dict, term: str) -> dict:
     for e in data["entries"]:
         if exact(e["term"]) == exact(term):
             return e
-    for e in data["entries"]:
-        if norm(e["term"]) == norm(term) or norm(term) in {norm(a) for a in e.get("aliases") or []}:
-            return e
+    hits = [e for e in data["entries"] if any(exact(a) == exact(term) for a in e.get("aliases", []))]
+    if not hits:
+        hits = [e for e in data["entries"] if norm(e["term"]) == norm(term)
+                or norm(term) in {norm(a) for a in e.get("aliases", [])}]
+    if len(hits) == 1:
+        return hits[0]
+    if hits:
+        fail("Ambiguous term; use an exact stored name.", matches=[e["term"] for e in hits])
     fail(f"'{term}' is not in list '{data['slug']}'.")
 
 
@@ -549,10 +757,17 @@ def cmd_update(args):
             else:
                 e[k] = v
         if new_term:
+            old_term = e["term"]
             e.setdefault("aliases", [])
             if exact(e["term"]) not in {exact(a) for a in e["aliases"]}:
                 e["aliases"].append(e["term"])
             e["term"] = new_term
+            for other in data["entries"]:
+                for field in ("related_terms", "distinct_from"):
+                    other[field] = [new_term if exact(t) == exact(old_term) else t for t in other.get(field, [])]
+        probs = entry_problems(e)
+        if probs:
+            fail("Nothing written: invalid update.", problems=probs)
         e.update(clean_entry(e))
         probs = entry_problems(e)
         if probs:
@@ -601,6 +816,8 @@ def cmd_merge(args):
                        if exact(a) != exact(keep["term"])]
     keep["related_terms"] = [r for r in union(keep.get("related_terms"), drop.get("related_terms"))
                              if exact(r) not in {exact(keep["term"]), exact(drop["term"])}]
+    keep["distinct_from"] = [t for t in union(keep.get("distinct_from"), drop.get("distinct_from"))
+                             if exact(t) not in {exact(keep["term"]), exact(drop["term"])}]
     fe_drop = drop.get("first_encountered") or {}
     keep["seen_in"] = union(keep.get("seen_in"), (drop.get("seen_in") or []) +
                             ([{"source": fe_drop.get("source", ""), "context": fe_drop.get("context", ""),
@@ -612,71 +829,97 @@ def cmd_merge(args):
     for e in data["entries"]:
         e["related_terms"] = [keep["term"] if exact(r) == exact(drop["term"]) else r
                               for r in e.get("related_terms") or []]
+    probs = entry_problems(keep)
+    if probs:
+        fail("Nothing written: invalid merge.", problems=probs)
+    for other in data["entries"]:
+        other["distinct_from"] = [keep["term"] if exact(t) == exact(drop["term"]) else t
+                                  for t in other.get("distinct_from", [])]
     keep.update(clean_entry(keep))
     save_list(h, data)
     out({"ok": True, "kept": keep["term"], "dropped": drop["term"], "aliases": keep["aliases"]})
 
 
 def cmd_move(args):
-    """Move or copy entries to another list (e.g. after re-scoping)."""
+    """Move/copy once per identity, then reconcile same-list relationships."""
     h = home_dir(args)
+    if args.slug == args.to:
+        fail("Source and destination must be different lists.")
     src, dst = load_list(h, args.slug), load_list(h, args.to)
-    idx, moved, clashes = index_terms(dst["entries"], args.to), [], []
+    idx, moved, clashes, selected = index_terms(dst["entries"], args.to), [], [], set()
     for t in args.terms:
         e = find_entry(src, t)
+        key = exact(e["term"])
+        if key in selected:
+            continue
+        selected.add(key)
         hits = match([e["term"]] + (e.get("aliases") or []), idx)
+        hits = [hit for hit in hits if exact(hit["term"]) not in {exact(t) for t in e.get("distinct_from", [])}
+                and not any(exact(other["term"]) == exact(hit["term"])
+                            and exact(e["term"]) in {exact(t) for t in other.get("distinct_from", [])}
+                            for other in dst["entries"])]
         if hits:
             clashes.append({"term": e["term"], "matches": hits})
             continue
-        dst["entries"].append(json.loads(json.dumps(e, default=str)))
-        if not args.copy:
-            src["entries"].remove(e)
+        copied = copy.deepcopy(e)
+        dst["entries"].append(copied)
+        idx += index_terms([copied], args.to)
         moved.append(e["term"])
+    if not args.copy:
+        src["entries"] = [e for e in src["entries"] if e["term"] not in moved]
+    removed_links = []
     if moved:
-        save_list(h, dst)
-        if not args.copy:
-            save_list(h, src)
-    out({"ok": True, "moved" if not args.copy else "copied": moved, "skipped_duplicates": clashes})
+        changed = [dst] if args.copy else [dst, src]
+        for data in changed:
+            terms = {exact(e["term"]) for e in data["entries"]}
+            for e in data["entries"]:
+                missing = [t for t in e.get("related_terms", []) if exact(t) not in terms]
+                if missing:
+                    removed_links.append({"list": data["slug"], "term": e["term"], "related_terms": missing})
+                    e["related_terms"] = [t for t in e["related_terms"] if exact(t) in terms]
+        changes = {}
+        for data in changed:
+            changes.update(prepared_list(h, data))
+        commit_files(h, changes)
+        for data in changed:
+            prune_backups(h, data["slug"])
+    out({"ok": True, "moved" if not args.copy else "copied": moved, "skipped_duplicates": clashes,
+         "removed_relationships": removed_links})
 
 
 def cmd_undo(args):
     h = home_dir(args)
-    bdir = os.path.join(h, ".backups")
-    backs = sorted(glob.glob(os.path.join(bdir, f"{args.slug}--*.yaml")))
+    load_list(h, args.slug)  # Refuse unsupported current formats, even for undo.
+    pattern = storage_path(h, ".backups", f"{checked_slug(args.slug)}--*.yaml")
+    backs = sorted(glob.glob(pattern))
     if not backs:
         fail(f"No backups for '{args.slug}'.")
     latest = backs[-1]
+    original = file_bytes(latest)
+    data = yaml.safe_load(original)
+    if not isinstance(data, dict) or data.get("slug") != args.slug:
+        fail("Backup identifier does not match the requested list.")
+    changes = prepared_list(h, data, with_backup=False)
+    changes[list_path(h, args.slug)] = original  # Restore original formatting exactly.
+    changes[latest] = None
     if args.dry_run:
         out({"ok": True, "would_restore": latest, "backups_available": len(backs)})
-    cur = list_path(h, args.slug)
-    shutil.copy2(latest, cur)
-    os.remove(latest)
-    data = read_yaml(cur)
-    render_to_file(h, data)
-    out({"ok": True, "restored": latest, "entries": len(data.get("entries") or []),
-         "backups_remaining": len(backs) - 1})
+    commit_files(h, changes, {latest: original})
+    out({"ok": True, "restored": latest, "entries": len(data["entries"]), "backups_remaining": len(backs) - 1})
 
 
 def cmd_validate(args):
     h = home_dir(args)
     slugs = [l["slug"] for l in all_lists(h)] if args.all or not args.slug else [args.slug]
     report = {}
-    for s in slugs:
-        data = load_list(h, s)
-        issues = []
-        if data.get("schema_version") != SCHEMA_VERSION:
-            issues.append(f"schema_version is {data.get('schema_version')}, expected {SCHEMA_VERSION}")
-        if (data.get("scope") or {}).get("level") not in LEVELS:
-            issues.append("scope.level missing or invalid")
-        terms = {exact(e.get("term", "")) for e in data["entries"]}
-        for e in data["entries"]:
-            for p in entry_problems(e):
-                issues.append(f"{e.get('term')}: {p}")
-            for r in e.get("related_terms") or []:
-                if exact(r) not in terms:
-                    issues.append(f"{e.get('term')}: related term '{r}' is not in this list (dangling)")
-        report[s] = issues
-    out({"ok": all(not v for v in report.values()), "issues": report})
+    for slug in slugs:
+        data = read_yaml(list_path(h, slug))
+        issues = list_problems(data)
+        if isinstance(data, dict) and data.get("slug") != slug:
+            issues.append("stored slug does not match the filename")
+        report[slug] = issues
+    ok = all(not v for v in report.values())
+    out({"ok": ok, "issues": report}, 0 if ok else 1)
 
 
 # ------------------------------------------------------------------ render
@@ -700,7 +943,7 @@ def render_md(data: dict) -> str:
     ents = sorted(data.get("entries") or [], key=lambda e: sort_key(e["term"]))
     lines = [f"# {data.get('name')}: vocabulary", "",
              f"> {sc.get('subject', '')} · level: {sc.get('level', '')} · {len(ents)} terms · "
-             f"generated from `{data.get('slug')}.yaml` on {today()}. Edit the YAML (or ask lexicon), not this file.", ""]
+             f"generated from `{data.get('slug')}.yaml` on {today()}. Ask lexicon to edit this glossary; do not edit these generated files directly.", ""]
     if not ents:
         lines.append("_No terms yet._")
     letter = None
@@ -731,8 +974,193 @@ def render_md(data: dict) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+_HTML_CSS = """
+:root{--bg:#fafaf7;--fg:#1c1c1a;--muted:#6b6b66;--line:#dcdcd4;--card:#fff;--accent:#2a5bd7;--chip:#eceee8;--mark:#fff2a8}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#161616;--fg:#e8e8e4;--muted:#9a9a93;--line:#333330;--card:#1f1f1e;--accent:#8fb0ff;--chip:#2a2a28;--mark:#5a4d00}}
+:root[data-theme=dark]{--bg:#161616;--fg:#e8e8e4;--muted:#9a9a93;--line:#333330;--card:#1f1f1e;--accent:#8fb0ff;--chip:#2a2a28;--mark:#5a4d00}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.wrap{max-width:820px;margin:0 auto;padding:0 16px 64px}
+header{padding:28px 0 12px}
+h1{margin:0;font-size:1.6rem}
+.sub{color:var(--muted);font-size:.9rem;margin-top:4px}
+.bar{position:sticky;top:0;background:var(--bg);padding:10px 0;border-bottom:1px solid var(--line);z-index:5}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input[type=search]{flex:1;min-width:180px;padding:9px 12px;font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:8px}
+button{font:inherit;font-size:.85rem;color:var(--fg);background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:7px 11px;cursor:pointer}
+button[aria-pressed=true]{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chips{margin-top:8px}
+.letters{margin-top:8px;display:flex;flex-wrap:wrap;gap:2px}
+.letters a{padding:2px 7px;border-radius:6px;text-decoration:none;color:var(--accent);font-size:.9rem}
+.letters a.off{color:var(--muted);opacity:.4;pointer-events:none}
+.count{color:var(--muted);font-size:.85rem;margin:14px 0 4px}
+h2{margin:26px 0 6px;font-size:1.1rem;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:4px;scroll-margin-top:130px}
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;margin:8px 0;scroll-margin-top:130px}
+details:target{outline:2px solid var(--accent)}
+summary{cursor:pointer;padding:10px 14px;list-style:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"\\25B8";color:var(--muted);margin-right:8px}
+details[open]>summary::before{content:"\\25BE"}
+.term{font-weight:600}
+.badge{font-size:.72rem;background:var(--chip);border-radius:999px;padding:1px 8px;margin-left:8px;color:var(--muted)}
+.gloss{display:block;color:var(--muted);font-size:.9rem;margin:2px 0 0 20px}
+details[open] .gloss{display:none}
+.body{padding:0 14px 12px 34px}
+.body p{margin:8px 0}
+.lbl{font-weight:600}
+pre{background:var(--chip);padding:8px 10px;border-radius:6px;overflow-x:auto;font-size:.85rem;margin:4px 0}
+.prov{color:var(--muted);font-size:.78rem;word-break:break-word}
+a{color:var(--accent)}
+mark{background:var(--mark);color:inherit;border-radius:2px}
+.empty{color:var(--muted);padding:24px 0}
+[hidden]{display:none!important}
+@media print{.bar{display:none}details{break-inside:avoid}}
+"""
+
+_HTML_JS = """
+(function(){
+var q=document.getElementById('q'),count=document.getElementById('count'),
+    entries=[].slice.call(document.querySelectorAll('details.entry')),
+    secs=[].slice.call(document.querySelectorAll('section.letter')),
+    links={},chips=[].slice.call(document.querySelectorAll('.chips button')),
+    active={},tog=document.getElementById('toggle'),empty=document.getElementById('empty');
+[].forEach.call(document.querySelectorAll('.letters a'),function(a){links[a.getAttribute('data-l')]=a});
+function apply(){
+  var t=q.value.trim().toLowerCase(),terms=t?t.split(/\\s+/):[],shown=0,anyType=Object.keys(active).length>0;
+  entries.forEach(function(e){
+    var h=e.getAttribute('data-s'),ok=terms.every(function(w){return h.indexOf(w)>-1});
+    if(ok&&anyType&&!active[e.getAttribute('data-t')])ok=false;
+    e.hidden=!ok;if(ok)shown++;
+  });
+  var has={};
+  secs.forEach(function(s){
+    var vis=s.querySelector('details.entry:not([hidden])');s.hidden=!vis;
+    if(vis)has[s.getAttribute('data-l')]=1;
+  });
+  for(var l in links)links[l].classList.toggle('off',!has[l]);
+  count.textContent=shown+' of '+entries.length+' terms';
+  empty.hidden=shown>0;
+}
+q.addEventListener('input',apply);
+chips.forEach(function(c){c.addEventListener('click',function(){
+  var k=c.getAttribute('data-t'),on=!active[k];
+  if(on)active[k]=1;else delete active[k];
+  c.setAttribute('aria-pressed',on);apply();
+})});
+tog.addEventListener('click',function(){
+  var open=tog.getAttribute('aria-pressed')!=='true';
+  tog.setAttribute('aria-pressed',open);tog.textContent=open?'Collapse all':'Expand all';
+  entries.forEach(function(e){if(!e.hidden)e.open=open});
+});
+document.addEventListener('keydown',function(e){
+  if(e.key==='/'&&document.activeElement!==q){e.preventDefault();q.focus()}
+  else if(e.key==='Escape'&&document.activeElement===q){q.value='';apply();q.blur()}
+});
+[].forEach.call(document.querySelectorAll('a.rel'),function(a){
+  a.addEventListener('click',function(){
+    var id=a.getAttribute('href').slice(1),d=document.getElementById(id);
+    if(d){d.hidden=false;d.open=true}
+  });
+});
+function hashOpen(){var d=location.hash&&document.getElementById(location.hash.slice(1));if(d&&d.tagName==='DETAILS')d.open=true}
+window.addEventListener('hashchange',hashOpen);hashOpen();
+window.addEventListener('beforeprint',function(){entries.forEach(function(e){e.open=true})});
+apply();
+})();
+"""
+
+
+def render_html(data: dict) -> str:
+    """One self-contained HTML page per list: search, A-Z jump bar, type filter, expand/collapse,
+    related-term links, light and dark mode. Everything is computed from the stored entries."""
+    esc = lambda x: htmllib.escape(str(x), quote=True)
+    sc = data.get("scope") or {}
+    ents = sorted(data.get("entries") or [], key=lambda e: sort_key(e["term"]))
+    ids, seen = {}, set()
+    for e in ents:
+        base = re.sub(r"[^a-z0-9]+", "-", e["term"].lower()).strip("-") or "term"
+        cand, n = base, 2
+        while cand in seen:
+            cand, n = f"{base}-{n}", n + 1
+        seen.add(cand)
+        ids[e["term"]] = cand
+    by_name = {}
+    for e in ents:
+        by_name[e["term"].lower()] = ids[e["term"]]
+        for a in e.get("aliases") or []:
+            by_name.setdefault(a.lower(), ids[e["term"]])
+    types = sorted({(e.get("type") or "concept") for e in ents})
+
+    def letter_of(t):
+        first = (re.sub(r"^[^\w]+", "", t) or "#")[0].upper()
+        return first if first.isalpha() else "#"
+
+    letters = sorted({letter_of(e["term"]) for e in ents}, key=lambda c: (c == "#", c))
+    nav = "".join(f'<a href="#sec-{"num" if l == "#" else l}" data-l="{esc(l)}">{esc(l)}</a>' for l in letters)
+    chips = "".join(f'<button type="button" data-t="{esc(t)}" aria-pressed="false">{esc(t)}</button>' for t in types)
+
+    body, cur = [], None
+    for e in ents:
+        l = letter_of(e["term"])
+        if l != cur:
+            if cur is not None:
+                body.append("</section>")
+            cur = l
+            body.append(f'<section class="letter" data-l="{esc(l)}"><h2 id="sec-{"num" if l == "#" else esc(l)}">{esc(l)}</h2>')
+        d = (e.get("definition") or "").strip()
+        first = re.split(r"(?<=[.!?])\s", d, maxsplit=1)[0] if d else ""
+        aliases = e.get("aliases") or []
+        hay = " ".join([e["term"], *aliases, d, e.get("example") or "", e.get("use_case") or ""]).lower()
+        typ = e.get("type") or "concept"
+        ex = (e.get("example") or "").strip()
+        ex_html = (f'<p><span class="lbl">Example.</span></p><pre>{esc(ex)}</pre>' if looks_like_code(ex)
+                   else f'<p><span class="lbl">Example.</span> {esc(ex)}</p>')
+        rel = []
+        for r in e.get("related_terms") or []:
+            tid = by_name.get(r.lower())
+            rel.append(f'<a class="rel" href="#{tid}">{esc(r)}</a>' if tid else esc(r))
+        fe = e.get("first_encountered") or {}
+        prov = [esc(x) for x in (fe.get("context"), fe.get("source"), fe.get("date")) if x]
+        parts = [f'<details class="entry" id="{ids[e["term"]]}" data-t="{esc(typ)}" data-s="{esc(hay)}">',
+                 f'<summary><span class="term">{esc(e["term"])}</span><span class="badge">{esc(typ)}</span>'
+                 f'<span class="gloss">{esc(first)}</span></summary><div class="body">']
+        if aliases:
+            parts.append(f'<p class="prov">also: {esc(", ".join(aliases))}</p>')
+        parts.append(f'<p><span class="lbl">Definition.</span> {esc(d)}</p>')
+        parts.append(ex_html)
+        parts.append(f'<p><span class="lbl">Use case.</span> {esc((e.get("use_case") or "").strip())}</p>')
+        if rel:
+            parts.append(f'<p><span class="lbl">Related:</span> {", ".join(rel)}</p>')
+        if prov:
+            parts.append(f'<p class="prov">First seen: {", ".join(prov)}</p>')
+        parts.append("</div></details>")
+        body.append("".join(parts))
+    if cur is not None:
+        body.append("</section>")
+
+    title = f"{data.get('name')}: vocabulary"
+    sub = (f"{esc(sc.get('subject', ''))} &middot; level: {esc(sc.get('level', ''))} &middot; {len(ents)} terms "
+           f"&middot; generated from <code>{esc(data.get('slug'))}.yaml</code> on {today()}. "
+           "Ask lexicon to edit this glossary; do not edit this generated file directly.")
+    return ("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+            f"<title>{esc(title)}</title><style>{_HTML_CSS}</style></head><body><div class=\"wrap\">"
+            f"<header><h1>{esc(title)}</h1><div class=\"sub\">{sub}</div></header>"
+            "<div class=\"bar\"><div class=\"row\">"
+            "<input id=\"q\" type=\"search\" placeholder=\"Search terms, definitions, examples  (press / to focus)\" aria-label=\"Search\">"
+            "<button id=\"toggle\" type=\"button\" aria-pressed=\"false\">Expand all</button></div>"
+            f"<div class=\"chips row\" aria-label=\"Filter by type\">{chips}</div>"
+            f"<nav class=\"letters\" aria-label=\"Jump to letter\">{nav}</nav></div>"
+            "<div id=\"count\" class=\"count\"></div>"
+            "<div id=\"empty\" class=\"empty\" hidden>No terms match.</div>"
+            f"<main>{''.join(body) if body else '<p class=\"empty\">No terms yet.</p>'}</main>"
+            f"</div><script>{_HTML_JS}</script></body></html>\n")
+
+
 def render_to_file(h: str, data: dict):
-    write_atomic(os.path.join(lists_dir(h), f"{data['slug']}.md"), render_md(data))
+    slug = checked_slug(data["slug"])
+    commit_files(h, {storage_path(h, "lists", f"{slug}.md"): render_md(data).encode("utf-8"),
+                     storage_path(h, "lists", f"{slug}.html"): render_html(data).encode("utf-8")})
 
 
 def cmd_render(args):
@@ -742,7 +1170,8 @@ def cmd_render(args):
         sys.stdout.write(render_md(data))
         return
     render_to_file(h, data)
-    out({"ok": True, "path": os.path.join(lists_dir(h), f"{args.slug}.md")})
+    out({"ok": True, "path": os.path.join(lists_dir(h), f"{args.slug}.md"),
+         "html_path": os.path.join(lists_dir(h), f"{args.slug}.html")})
 
 
 # --------------------------------------------------------- tutorial-creator
@@ -851,7 +1280,7 @@ def view_drift(vocab: str, entries: list[dict]) -> dict:
         return {"view": None, "md_only_terms": 0, "examples": []}
     keys = {_view_key(e.get("term", "")) for e in entries if isinstance(e, dict)}
     section, only = "", []
-    for line in open(md, encoding="utf-8", errors="replace"):
+    for line in Path(md).read_text(encoding="utf-8", errors="replace").splitlines():
         if line.startswith("## "):
             section = line[3:].strip().lower()
             continue
@@ -869,6 +1298,9 @@ def view_drift(vocab: str, entries: list[dict]) -> dict:
 def cmd_export_tc(args):
     h = home_dir(args)
     data = load_list(h, args.slug)
+    issues = list_problems(data)
+    if issues:
+        fail("Nothing written: source list is invalid.", issues=issues)
     vocab = args.vocab or default_tc_vocab(h)
     if not vocab or not os.path.exists(vocab):
         fail("Could not find tutorial-creator's vocabulary.yaml. Pass --vocab PATH "
@@ -888,33 +1320,40 @@ def cmd_export_tc(args):
         rec = to_tc(e, data.get("name", data["slug"]))
         to_write.append(rec)
         idx += index_terms([rec], "tutorial-creator")
+    if to_write:
+        # Keep existing block-style bytes. An empty flow sequence has no entries to preserve.
+        original = file_bytes(vocab)
+        if (yaml.safe_load(original) or []) != existing:
+            fail("Vocabulary changed during preparation; retry. Nothing changed.")
+        node = yaml.compose(original)
+        prefix = original
+        if isinstance(node, yaml.SequenceNode) and node.flow_style:
+            if existing:
+                fail("Flow-style vocabulary is not appendable. Convert it to block-style with its owning tool first; nothing changed.")
+            text = original.decode("utf-8")
+            prefix = (text[:node.start_mark.index] + text[node.end_mark.index:]).encode("utf-8")
+        chunk = ydump(to_write).encode("utf-8")
+        planned = prefix + (b"\n" if prefix and not prefix.endswith(b"\n") else b"") + chunk
+        after = yaml.safe_load(planned)
+        if not isinstance(after, list) or after != existing + to_write:
+            fail("Destination serialization does not support a safe append; nothing changed.")
     if args.dry_run or not to_write:
         out({"ok": True, "dry_run": bool(args.dry_run), "vocab": vocab,
              "view_drift": view_drift(vocab, existing),
              ("would_add" if args.dry_run else "added"): [r["term"] for r in to_write],
              "skipped_existing": skipped, "preview": to_write[:3]})
-    # Append-only: the existing file is left byte-for-byte intact. Re-dumping it
-    # would reformat hundreds of hand-curated entries.
-    original = open(vocab, "rb").read()
-    chunk = ydump(to_write)
-    with open(vocab, "ab") as f:
-        if original and not original.endswith(b"\n"):
-            f.write(b"\n")
-        f.write(chunk.encode("utf-8"))
-    try:
-        after = tc_entries(vocab)
-        assert len(after) == len(existing) + len(to_write)
-    except Exception as ex:  # roll back to the exact original bytes
-        with open(vocab, "wb") as f:
-            f.write(original)
-        fail(f"Append produced an unreadable file; rolled back. ({ex})")
     marker = os.path.join(os.path.dirname(vocab), f"{os.path.basename(vocab)}.add-{stamp()}")
-    write_atomic(marker, "\n".join(r["term"] for r in to_write) + "\n")
+    if os.path.lexists(marker):
+        fail("An undo marker already uses this timestamp. Retry in the next second; nothing changed.")
     for e in chosen:
         if e["term"] in {r["term"] for r in to_write}:
             e["exported_to_tc"] = today()
-    save_list(h, data)
+    # All potentially failing rendering and drift checks precede writes.
+    changes = {vocab: planned, marker: ("\n".join(r["term"] for r in to_write) + "\n").encode("utf-8")}
+    changes.update(prepared_list(h, data))
     drift = view_drift(vocab, after)
+    commit_files(h, changes, {vocab: original, marker: None})
+    prune_backups(h, data["slug"])
     if drift["view"] is None:
         nxt = ("There is no VOCABULARY.md beside that yaml yet: run `/tutorial-creator vocab regen-md` to "
                "build one from it, exported terms included. ")
@@ -1073,8 +1512,7 @@ class _Text(html.parser.HTMLParser):
 
 def cmd_html_text(args):
     from urllib.parse import urljoin, urlparse, urldefrag
-    raw = sys.stdin.read() if args.path == "-" else open(os.path.expanduser(args.path), encoding="utf-8",
-                                                          errors="replace").read()
+    raw = sys.stdin.read() if args.path == "-" else Path(os.path.expanduser(args.path)).read_text(encoding="utf-8", errors="replace")
     p = _Text()
     p.feed(raw)
     text = re.sub(r"[ \t]+", " ", "".join(p.parts))
@@ -1136,7 +1574,27 @@ def main():
     c = sp.add_parser("norm"); c.add_argument("terms", nargs="+"); c.set_defaults(fn=cmd_norm)
 
     args = ap.parse_args()
-    args.fn(args)
+    mutators = {"init", "config", "new-list", "set-scope", "add", "update", "remove", "merge",
+                "move", "undo", "render", "export-tc"}
+    writing = args.cmd in mutators and not getattr(args, "dry_run", False) and not getattr(args, "stdout", False)
+    try:
+        with contextlib.ExitStack() as stack:
+            h = home_dir(args)
+            if writing:
+                os.makedirs(h, exist_ok=True)
+                stack.enter_context(writer_lock(storage_path(h, "", ".write-lock")))
+                recovery_root = storage_path(h, "", ".recovery")
+                if os.path.isdir(recovery_root) and os.listdir(recovery_root):
+                    fail(f"An interrupted write needs recovery; inspect {recovery_root} before making changes.")
+                read_config(h)
+                if args.cmd == "export-tc":
+                    vocab = args.vocab or default_tc_vocab(h)
+                    if vocab and os.path.isfile(vocab):
+                        args.vocab = os.path.abspath(vocab)
+                        stack.enter_context(writer_lock(args.vocab + ".lexicon-lock"))
+            args.fn(args)
+    except (OSError, ValueError, TypeError, AttributeError, KeyError, yaml.YAMLError, RuntimeError) as ex:
+        fail(str(ex))
 
 
 if __name__ == "__main__":

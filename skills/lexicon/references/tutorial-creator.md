@@ -58,13 +58,18 @@ What the script guarantees, so you can tell the user plainly:
 
 - **Existing entries are untouched.** New entries are appended to the end of the file. The file is
   never re-serialized, because re-dumping would reformat hundreds of hand-curated entries.
+  An empty `[]` becomes a block list, preserving surrounding comments. Nonempty flow-style
+  lists are refused before writing; let the owning tool convert them to block style first.
 - **No duplicates.** Terms that already exist there (same surface-form matching as `dupes`) are
   skipped and listed.
-- **Safe failure.** After appending, it re-parses the file and checks the entry count. If anything
-  is off, it restores the exact original bytes and reports an error.
+- **Safe failure.** It validates the proposed YAML before writing. Vocabulary, undo-marker and
+  source-list changes share a rollback boundary, with recovery copies retained if rollback
+  cannot finish or another tool changed a file. See schema.md's recovery procedure. Do not
+  edit the vocabulary with another tool during export.
 - **Undoable.** It writes tutorial-creator's own 24-hour undo marker
   (`vocabulary.yaml.add-<timestamp>`, one term per line), so `/tutorial-creator vocab undo`
-  reverses the whole export as one batch.
+  reverses the whole export as one batch. A timestamp collision is rejected before any write;
+  retry in the next second. An earlier marker is never overwritten.
 - The lexicon entries get `exported_to_tc: <date>`.
 
 ### After an export: `regen-md`
@@ -92,7 +97,7 @@ version. A plugin stays on the old one until updated (`claude plugin marketplace
 tutorial-creator`, then `claude plugin update tutorial-creator@tutorial-creator`); a hand install
 needs a `git pull` in its folder.
 
-lexicon never regenerates or edits another tool's files other than the append described above.
+lexicon does not regenerate the other tool's Markdown view; it changes only the vocabulary and its export undo marker as described above.
 
 ### Flashcards of just the exported terms
 

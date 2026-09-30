@@ -15,7 +15,7 @@ The work splits cleanly in two:
   two differently-worded terms are really the same concept.
 - **`scripts/lexicon.py`** does everything that must be exact: storage, validation, surface-form
   duplicate matching, backups and undo, the Markdown view, the tutorial-creator mapping, and text
-  extraction from transcripts and HTML. Every command prints JSON.
+  extraction from transcripts and HTML. Commands print JSON; `render --stdout` and `session-text --raw` print their requested text.
 
 Never hand-edit the YAML list files with Write or Edit. Go through the script, so every change is
 validated, backed up, and re-rendered.
@@ -31,9 +31,12 @@ python3 "$S" status
 default list, and the detected tutorial-creator vocabulary file.
 
 - Lists live in `~/.claude/lexicon/lists/<slug>.yaml`, and each has a generated `<slug>.md`
-  beside it.
+  and a generated, self-contained `<slug>.html` (search, A-Z jump, type filter, expand/collapse) beside it.
 - `LEXICON_HOME` (or `--home DIR` on any command) overrides the location. If the user or task names
   a different home, pass it on every call. Tests and demos should always use a scratch home.
+- If a helper returns `ok: false` or a nonzero exit status, report the error and stop that change;
+  never bypass it by hand-editing YAML. For recovery-copy or interrupted-write errors, read
+  `references/schema.md` before acting. Unsupported versions require a compatible helper.
 - If `first_run` is true (no lists exist yet, even if a config file does), do **First run** below
   before anything else.
 
@@ -47,10 +50,10 @@ Map the user's words to a workflow. They will rarely use these exact phrases.
 | Start a glossary for a new subject | **Scope interview**, then `new-list` |
 | Pull terms from a session, file, doc, page, site, or pasted text | **Scan** |
 | Add a specific term they name | **Scan** with the term as the only candidate (skip extraction) |
-| See their lists, or a term | `lists`, `show <slug> [term]`; point them at the `.md` view |
+| See their lists, or a term | `lists`, `show <slug> [term]`; point them at the `.md` or `.html` view |
 | Change a definition, rename a term, add an alias | `update` (see references/schema.md for patch shape) |
 | Find or fix duplicates | **Duplicates** |
-| Move terms between lists, change a list's scope | `move`, `set-scope` |
+| Move terms between lists, change a list's scope | `move`, `set-scope` (see references/schema.md for relationship handling) |
 | Send terms to tutorial-creator, or seed a list from it | **tutorial-creator interop** |
 | Undo the last change to a list | `undo <slug> --dry-run`, confirm, then `undo <slug>` |
 
@@ -86,10 +89,12 @@ Ask about:
 Then create the list:
 
 ```bash
-echo '{"subject":"Swift and SwiftUI development","level":"intermediate",
+python3 "$S" new-list --name "Swift" --scope - <<'JSON'
+{"subject":"Swift and SwiftUI development","level":"intermediate",
        "include":["keywords and attributes","concurrency concepts","SwiftUI APIs","multi-word phrases"],
        "exclude":["identifiers from the user's own projects","general English"],
-       "known_terms":[],"notes":""}' | python3 "$S" new-list --name "Swift" --scope -
+       "known_terms":[],"notes":""}
+JSON
 ```
 
 The first list becomes the default. Scope can be changed later with `set-scope <slug> --scope -`
@@ -184,8 +189,8 @@ entry instead: `update <slug> --append-seen` with `{"term": ..., "seen_in": [{so
 `update` replaces any other list field you send, such as `aliases`, so to add an alias send the full
 list, old aliases included.
 
-**8. Report.** Say what was added to which list, the new count, and where the Markdown view is
-(`~/.claude/lexicon/lists/<slug>.md`). Mention `undo` in one line.
+**8. Report.** Say what was added to which list, the new count, and where the Markdown and HTML views are
+(`~/.claude/lexicon/lists/<slug>.md` and `.html`). Mention `undo` in one line.
 
 ## Writing entries
 
@@ -250,8 +255,9 @@ kept by subject. Terms `vocab ingest` added can come into a list with **Import**
 
 - **Export** (lexicon to tutorial-creator): run `export-tc <slug> <terms...> --dry-run` first and
   show what would be added and what would be skipped as already there. Then run it without
-  `--dry-run`. The script appends to the end of their file without rewriting anything already in
-  it. It writes tutorial-creator's own undo marker and rolls back if the result does not parse.
+  `--dry-run`. The script preserves existing block-style entries byte-for-byte; an empty `[]`
+  is initialized to a block list. It prepares and validates the result before writing, and
+  coordinates the vocabulary, undo marker, and source list with rollback and recovery copies.
   Afterwards, relay the script's `next` message: it says to run `/tutorial-creator vocab regen-md`,
   which brings their VOCABULARY.md in step with the yaml in place. The exported terms get rows, and
   if the view had drifted from the yaml it fixes other rows too, so say so. When

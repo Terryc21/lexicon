@@ -1,0 +1,11 @@
+<!doctype html><html><head><title>Concurrency notes</title></head><body>
+<h1>Swift concurrency</h1><p>async marks an asynchronous function and await marks a possible suspension point.</p>
+<p>Actor isolation restricts access to actor-owned state. Example: actor Counter { var count = 0 }.</p>
+<p>Actor reentrancy allows another call to use an actor while an earlier call is suspended. Example: read count, await a save, then re-check count.</p>
+<p>Sendable describes values that can safely cross concurrency isolation boundaries. Example: struct Point: Sendable { let x: Int }.</p>
+<p>Structured concurrency ties child tasks to their parent scope. Example: async let first = loadFirst().</p>
+<p>Task cancellation is cooperative: a task must check cancellation to stop early. Example: try Task.checkCancellation().</p>
+<p>A task group manages a dynamic collection of child tasks within a scope. Example: withTaskGroup(of: Int.self) { group in ... }.</p>
+<p>A continuation bridges callback-based code to an asynchronous function. Example: withCheckedContinuation { continuation in ... }.</p>
+<p>Our fictional app AuroraPocket uses an internal SyncWidgetX class; those names are project-specific.</p>
+</body></html>

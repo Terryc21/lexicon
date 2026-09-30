@@ -1,0 +1,50 @@
+schema_version: 1
+name: Swift
+slug: swift
+created: '2026-09-20'
+scope:
+  subject: Swift
+  level: intermediate
+  include:
+  - concepts
+  - keywords
+  - multi-word phrases
+  exclude:
+  - project identifiers
+  known_terms: []
+  notes: Synthetic evaluation scope
+entries:
+- term: '@MainActor'
+  aliases: []
+  type: concept
+  definition: A reusable concept.
+  example: A simple example sentence illustrates the concept.
+  use_case: Use it when reasoning about a system.
+  related_terms: []
+  distinct_from: []
+  first_encountered:
+    source: synthetic fixture
+    context: Evaluation only
+    date: '2026-09-20'
+  seen_in: []
+  added: '2026-09-20'
+  updated: '2026-09-20'
+  notes: ''
+  exported_to_tc: null
+- term: retain cycle
+  aliases: []
+  type: concept
+  definition: A reusable concept.
+  example: A simple example sentence illustrates the concept.
+  use_case: Use it when reasoning about a system.
+  related_terms: []
+  distinct_from: []
+  first_encountered:
+    source: synthetic fixture
+    context: Evaluation only
+    date: '2026-09-20'
+  seen_in: []
+  added: '2026-09-20'
+  updated: '2026-09-20'
+  notes: ''
+  exported_to_tc: null

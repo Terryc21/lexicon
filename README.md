@@ -39,7 +39,7 @@ better definition while remembering the other spelling as an alias.
 
 If you use [tutorial-creator](https://github.com/Terryc21/tutorial-creator) for spaced-repetition
 review, lexicon can send terms to its vocabulary file and seed a list from it. Exports only append
-to that file, skip terms it already has, and can be undone with tutorial-creator's own
+to existing block-style entries (initializing an empty list when needed), skip terms it already has, and can be undone with tutorial-creator's own
 `vocab undo`.
 
 ## Install
@@ -72,3 +72,10 @@ backups, and the tutorial-creator file format.
 ## License
 
 Apache License 2.0. See `LICENSE` and `NOTICE`.
+
+## Validation
+
+Run `python3 -B -m unittest discover -s tests -v` for deterministic regression tests using only
+synthetic temporary data. See [tests/README.md](tests/README.md) for coverage and the separate
+[behavioral evaluation guide](skills/lexicon/evals/README.md). Behavioral scenarios are not
+automatically counted as live host runs.

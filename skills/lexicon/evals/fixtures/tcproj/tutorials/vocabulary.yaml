@@ -1,0 +1,127 @@
+# Synthetic fixture only
+- term: '@MainActor'
+  type: concept
+  definition: A global actor for main-actor isolation.
+  use_case: 'Use it to check observable behavior. Example: Compare expected and actual
+    outcomes.'
+  first_encountered:
+    source_file: synthetic-testing.md
+    context: Day 1
+    date: '2026-09-20'
+  status: reviewing
+  test_history: []
+  applied_test_history: []
+  related_terms: []
+  notes: Synthetic evaluation data.
+- term: Unit testing
+  type: concept
+  definition: A testing technique used to verify behavior.
+  use_case: 'Use it to check observable behavior. Example: Compare expected and actual
+    outcomes.'
+  first_encountered:
+    source_file: synthetic-testing.md
+    context: Day 1
+    date: '2026-09-20'
+  status: reviewing
+  test_history: []
+  applied_test_history: []
+  related_terms: []
+  notes: Synthetic evaluation data.
+- term: Integration testing
+  type: concept
+  definition: A testing technique used to verify behavior.
+  use_case: 'Use it to check observable behavior. Example: Compare expected and actual
+    outcomes.'
+  first_encountered:
+    source_file: synthetic-testing.md
+    context: Day 1
+    date: '2026-09-20'
+  status: reviewing
+  test_history: []
+  applied_test_history: []
+  related_terms: []
+  notes: Synthetic evaluation data.
+- term: Regression testing
+  type: concept
+  definition: A testing technique used to verify behavior.
+  use_case: 'Use it to check observable behavior. Example: Compare expected and actual
+    outcomes.'
+  first_encountered:
+    source_file: synthetic-testing.md
+    context: Day 1
+    date: '2026-09-20'
+  status: reviewing
+  test_history: []
+  applied_test_history: []
+  related_terms: []
+  notes: Synthetic evaluation data.
+- term: Boundary value testing
+  type: concept
+  definition: A testing technique used to verify behavior.
+  use_case: 'Use it to check observable behavior. Example: Compare expected and actual
+    outcomes.'
+  first_encountered:
+    source_file: synthetic-testing.md
+    context: Day 1
+    date: '2026-09-20'
+  status: reviewing
+  test_history: []
+  applied_test_history: []
+  related_terms: []
+  notes: Synthetic evaluation data.
+- term: Property-based testing
+  type: concept
+  definition: A testing technique used to verify behavior.
+  use_case: 'Use it to check observable behavior. Example: Compare expected and actual
+    outcomes.'
+  first_encountered:
+    source_file: synthetic-testing.md
+    context: Day 1
+    date: '2026-09-20'
+  status: reviewing
+  test_history: []
+  applied_test_history: []
+  related_terms: []
+  notes: Synthetic evaluation data.
+- term: Test double
+  type: concept
+  definition: A testing technique used to verify behavior.
+  use_case: 'Use it to check observable behavior. Example: Compare expected and actual
+    outcomes.'
+  first_encountered:
+    source_file: synthetic-testing.md
+    context: Day 1
+    date: '2026-09-20'
+  status: reviewing
+  test_history: []
+  applied_test_history: []
+  related_terms: []
+  notes: Synthetic evaluation data.
+- term: Assertion
+  type: concept
+  definition: A testing technique used to verify behavior.
+  use_case: 'Use it to check observable behavior. Example: Compare expected and actual
+    outcomes.'
+  first_encountered:
+    source_file: synthetic-testing.md
+    context: Day 1
+    date: '2026-09-20'
+  status: reviewing
+  test_history: []
+  applied_test_history: []
+  related_terms: []
+  notes: Synthetic evaluation data.
+- term: Mutation testing
+  type: concept
+  definition: A testing technique used to verify behavior.
+  use_case: 'Use it to check observable behavior. Example: Compare expected and actual
+    outcomes.'
+  first_encountered:
+    source_file: synthetic-testing.md
+    context: Day 1
+    date: '2026-09-20'
+  status: reviewing
+  test_history: []
+  applied_test_history: []
+  related_terms: []
+  notes: Synthetic evaluation data.
