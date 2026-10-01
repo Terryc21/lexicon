@@ -358,7 +358,7 @@ class Integrity(unittest.TestCase):
         self.add([entry('@MainActor',aliases=['MainActor'],type='attribute',related_terms=['Sendable']),
                   {**entry('Sendable'),'definition':'Safe to pass <across> actors & tasks.','example':'let x = 1 < 2'}])
         page=(self.home/'lists/swift.html').read_text()
-        for needle in ('<!doctype html>','id="q"','class="letters"','data-t="attribute"','href="#sendable"','<script>'):
+        for needle in ('<!doctype html>','id="q"','class="letters"','id="theme"','data-t="attribute"','href="#sendable"','<script>'):
             self.assertIn(needle,page)
         self.assertIn('Safe to pass &lt;across&gt; actors &amp; tasks.',page)
         self.assertNotIn('<across>',page)

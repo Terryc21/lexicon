@@ -1064,6 +1064,14 @@ document.addEventListener('keydown',function(e){
 });
 function hashOpen(){var d=location.hash&&document.getElementById(location.hash.slice(1));if(d&&d.tagName==='DETAILS')d.open=true}
 window.addEventListener('hashchange',hashOpen);hashOpen();
+var th=document.getElementById('theme'),root=document.documentElement;
+function isDark(){var t=root.getAttribute('data-theme');return t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches}
+function label(){th.textContent=isDark()?'Light mode':'Dark mode'}
+th.addEventListener('click',function(){
+  var n=isDark()?'light':'dark';root.setAttribute('data-theme',n);
+  try{localStorage.setItem('lexicon-theme',n)}catch(e){}label();
+});
+label();
 window.addEventListener('beforeprint',function(){entries.forEach(function(e){e.open=true})});
 apply();
 })();
@@ -1144,11 +1152,14 @@ def render_html(data: dict) -> str:
            "Ask lexicon to edit this glossary; do not edit this generated file directly.")
     return ("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
             "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-            f"<title>{esc(title)}</title><style>{_HTML_CSS}</style></head><body><div class=\"wrap\">"
+            f"<title>{esc(title)}</title>"
+            "<script>try{var t=localStorage.getItem('lexicon-theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>"
+            f"<style>{_HTML_CSS}</style></head><body><div class=\"wrap\">"
             f"<header><h1>{esc(title)}</h1><div class=\"sub\">{sub}</div></header>"
             "<div class=\"bar\"><div class=\"row\">"
             "<input id=\"q\" type=\"search\" placeholder=\"Search terms, definitions, examples  (press / to focus)\" aria-label=\"Search\">"
-            "<button id=\"toggle\" type=\"button\" aria-pressed=\"false\">Expand all</button></div>"
+            "<button id=\"toggle\" type=\"button\" aria-pressed=\"false\">Expand all</button>"
+            "<button id=\"theme\" type=\"button\">Dark mode</button></div>"
             f"<div class=\"chips row\" aria-label=\"Filter by type\">{chips}</div>"
             f"<nav class=\"letters\" aria-label=\"Jump to letter\">{nav}</nav></div>"
             "<div id=\"count\" class=\"count\"></div>"
