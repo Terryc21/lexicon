@@ -69,6 +69,10 @@ learning, and how to write an entry a stranger can use. `skills/lexicon/scripts/
 handles the parts that must be exact every time: storage, validation, duplicate matching,
 backups, and the tutorial-creator file format.
 
+## Privacy
+
+lexicon collects no data of its own. It has no server, no accounts, no telemetry and no analytics, and it sends nothing to its author. It reads the source you give it: a Claude Code session transcript, a file, or a web page or site (fetched with Claude's web fetch tool). It stores your vocabulary lists on your own machine under `~/.claude/lexicon/`, or in the folder set by `LEXICON_HOME`. Its helper script runs locally and makes no network requests. Anything it saves stays on your own machine. What you ask it to read is processed by Claude in your own session, under your own Anthropic terms and settings. Anthropic's plugin directory may show the author aggregate install counts; those come from the directory, not from the plugin.
+
 ## License
 
 Apache License 2.0. See `LICENSE` and `NOTICE`.
